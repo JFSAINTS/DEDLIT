@@ -1,0 +1,88 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Sin dependencias de runtime: basta comprobar que todo carga
+      - name: Comprobación de sintaxis
+        run: |
+          node --check server.js
+          node --check lib/config.js
+          node --check lib/providers.js
+          node --check lib/agent.js
+          node --check lib/media.js
+      - name: Arranque de humo
+        shell: pwsh
+        run: |
+          $env:DEDLIT_PORT = '8642'
+          $proc = Start-Process node -ArgumentList 'server.js' -PassThru -NoNewWindow
+          Start-Sleep 3
+          $res = Invoke-WebRequest http://127.0.0.1:8642/api/config -UseBasicParsing
+          if ($res.StatusCode -ne 200) { exit 1 }
+          Stop-Process -Id $proc.Id -Force
+
+  exe-windows:
+    runs-on: windows-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build:exe
+      - run: Rename-Item dist/dedlit-studio.exe dedlit-studio-win-x64.exe
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dedlit-studio-win-x64
+          path: dist/dedlit-studio-win-x64.exe
+
+  exe-macos:
+    # En macOS pkg firma (ad-hoc) los binarios automáticamente,
+    # imprescindible para Apple Silicon
+    runs-on: macos-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build:macos
+      - run: |
+          mv dist/dedlit-studio-x64 dist/dedlit-studio-macos-x64
+          mv dist/dedlit-studio-arm64 dist/dedlit-studio-macos-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dedlit-studio-macos
+          path: |
+            dist/dedlit-studio-macos-x64
+            dist/dedlit-studio-macos-arm64
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [exe-windows, exe-macos]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

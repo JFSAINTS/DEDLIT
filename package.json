@@ -1,0 +1,30 @@
+{
+  "name": "dedlit-studio",
+  "version": "0.1.0",
+  "description": "Frontend local y privado para trabajar con modelos de IA locales (Ollama, LM Studio) y en la nube (Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, GLM), con modo agente estilo Claude Code y soporte multimodal.",
+  "main": "server.js",
+  "bin": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build:exe": "pkg . --targets node22-win-x64",
+    "build:macos": "pkg . --targets node22-macos-x64,node22-macos-arm64 --no-bytecode --public",
+    "build:all": "npm run build:exe && npm run build:macos"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*"
+    ],
+    "outputPath": "dist"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JFSAINTS/DEDLIT.git"
+  },
+  "license": "MIT"
+}

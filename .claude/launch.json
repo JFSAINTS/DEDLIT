@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dedlit",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 8642
+    }
+  ]
+}

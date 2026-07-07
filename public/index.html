@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DEDLIT Studio</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>&#129302;</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <!-- Barra lateral -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">◆ DEDLIT</span>
+        <button id="btn-new-chat" title="Nueva conversación">＋</button>
+      </div>
+
+      <div class="sidebar-section">
+        <label>Proveedor</label>
+        <select id="sel-provider"></select>
+        <label>Modelo <button id="btn-refresh-models" class="mini" title="Recargar modelos">⟳</button></label>
+        <select id="sel-model"></select>
+        <input id="inp-model-manual" type="text" placeholder="…o escribe el modelo a mano">
+        <div id="model-caps" title="Capacidades estimadas según el nombre del modelo"></div>
+        <div class="toggle-row">
+          <label class="switch">
+            <input type="checkbox" id="chk-agent">
+            <span class="slider"></span>
+          </label>
+          <span>Modo agente <small>(archivos, comandos, git)</small></span>
+        </div>
+      </div>
+
+      <div class="sidebar-section" id="local-status">
+        <label>Servidores locales</label>
+        <div class="status-row"><span class="dot" id="dot-ollama"></span> Ollama <span class="status-detail" id="detail-ollama"></span></div>
+        <div class="status-row"><span class="dot" id="dot-lmstudio"></span> LM Studio <span class="status-detail" id="detail-lmstudio"></span></div>
+      </div>
+
+      <div class="sidebar-section grow">
+        <label>Conversaciones</label>
+        <div id="chat-list"></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button id="btn-vscode" title="Abrir el workspace en VS Code">⌨ VS Code</button>
+        <button id="btn-settings" title="Configuración y API keys">⚙ Ajustes</button>
+      </div>
+    </aside>
+
+    <!-- Zona principal -->
+    <main id="main">
+      <div id="messages">
+        <div class="welcome" id="welcome">
+          <h1>◆ DEDLIT Studio</h1>
+          <p>Tu frontend local y privado de IA. Selecciona un proveedor y un modelo en la barra lateral.</p>
+          <ul>
+            <li><b>Local:</b> Ollama y LM Studio se detectan automáticamente — nada sale de tu equipo.</li>
+            <li><b>Nube:</b> Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi y GLM con tu propia API key (⚙ Ajustes).</li>
+            <li><b>Modo agente:</b> el modelo puede leer/escribir archivos y ejecutar comandos <i>con tu aprobación</i>.</li>
+            <li><b>Multimedia:</b> adjunta imágenes, audio o vídeo con 📎 (según el modelo), y genera imágenes 🖼️, voz 🔊 o transcripciones 📝 con el selector de modo.</li>
+            <li><b>VS Code:</b> apunta Continue/Cline al gateway <code id="gw-url">http://127.0.0.1:8642/v1</code>.</li>
+          </ul>
+        </div>
+      </div>
+      <div id="composer-wrap">
+        <div id="attachments" class="hidden"></div>
+        <div id="composer">
+          <div class="composer-tools">
+            <select id="sel-mode" title="Modo de trabajo">
+              <option value="chat">💬 Chat</option>
+              <option value="image">🖼️ Generar imagen</option>
+              <option value="tts">🔊 Generar voz</option>
+              <option value="stt">📝 Transcribir audio</option>
+            </select>
+            <button id="btn-attach" title="Adjuntar imagen, audio o vídeo">📎</button>
+            <input type="file" id="inp-file" multiple accept="image/*,audio/*,video/*" class="hidden">
+            <input type="text" id="inp-voice" value="alloy" title="Voz para TTS (alloy, echo, nova…)" class="hidden">
+          </div>
+          <textarea id="inp-message" rows="3" placeholder="Escribe tu mensaje… (Enter para enviar, Shift+Enter para salto de línea)"></textarea>
+          <button id="btn-send" title="Enviar">➤</button>
+          <button id="btn-stop" title="Detener" class="hidden">■</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal de ajustes -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal">
+      <div class="modal-header">
+        <h2>⚙ Configuración</h2>
+        <button id="btn-close-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <h3>Workspace del agente</h3>
+        <input type="text" id="cfg-workspace" placeholder="I:\DEDLIT">
+        <p class="hint">Carpeta raíz donde el agente trabaja por defecto.</p>
+
+        <h3>Aprobaciones automáticas del agente</h3>
+        <label class="check-row"><input type="checkbox" id="cfg-auto-read"> Lectura (listar directorios, leer archivos)</label>
+        <label class="check-row"><input type="checkbox" id="cfg-auto-write"> Escritura (crear/modificar archivos)</label>
+        <label class="check-row"><input type="checkbox" id="cfg-auto-command"> Comandos (PowerShell, git, instalaciones)</label>
+        <p class="hint">Lo que no esté marcado te pedirá aprobación en el chat antes de ejecutarse.</p>
+
+        <h3>API keys y endpoints</h3>
+        <p class="hint">Las keys se guardan cifradas (AES-256-GCM) en tu carpeta de usuario y nunca salen de tu equipo salvo hacia el proveedor correspondiente. Deja el campo vacío para no cambiar; escribe <code>-</code> para borrar una key.</p>
+        <div id="cfg-providers"></div>
+
+        <h3>Gateway para VS Code (Continue / Cline)</h3>
+        <p class="hint">Endpoint OpenAI-compatible: <code id="cfg-gateway"></code><br>
+        Usa como modelo <code>proveedor:modelo</code>, p. ej. <code>ollama:llama3.1</code> o <code>anthropic:claude-sonnet-5</code>. API key: cualquiera (no se valida, solo escucha en localhost).</p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-save-config" class="primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
