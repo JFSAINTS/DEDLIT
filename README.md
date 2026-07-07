@@ -9,7 +9,8 @@ Frontend **local y privado** para trabajar con modelos de IA — locales y en la
 **Opción A — ejecutable** (no requiere Node): descarga el binario de tu plataforma desde [Releases](https://github.com/JFSAINTS/DEDLIT/releases):
 
 - **Windows**: `dedlit-studio-win-x64.exe` — doble clic y listo.
-- **macOS**: `dedlit-studio-macos-arm64` (Apple Silicon) o `dedlit-studio-macos-x64` (Intel). Tras descargar:
+- **macOS (Apple Silicon)**: `DEDLIT-Studio-arm64.dmg` — abre el DMG, arrastra **DEDLIT Studio** a Aplicaciones y lánzala (arranca el servidor y abre el navegador; para pararlo, sal de la app desde el Dock). La primera vez, si Gatekeeper se queja: clic derecho → *Abrir*, o `xattr -dr com.apple.quarantine "/Applications/DEDLIT Studio.app"`.
+- **macOS (binario suelto)**: `dedlit-studio-macos-arm64` (Apple Silicon) o `dedlit-studio-macos-x64` (Intel), para lanzarlo desde Terminal:
 
   ```bash
   chmod +x dedlit-studio-macos-arm64
