@@ -584,10 +584,13 @@ function openSettings() {
     const badge = p.local
       ? '<span class="badge local">local</span>'
       : (p.hasKey ? '<span class="badge key-ok">key configurada</span>' : '<span class="badge key-missing">sin key</span>');
+    const keyPlaceholder = p.hasKey
+      ? '●●●●●●●● guardada — escribe para reemplazar; un guion (-) para borrar'
+      : 'API key — vacío: no cambiar; un guion (-): borrar';
     div.innerHTML = `
       <div class="pname">${escapeHtml(p.name)} ${badge}</div>
-      ${p.needsKey ? `<input type="password" data-key="${id}" placeholder="API key (vacío = no cambiar, - = borrar)" autocomplete="off">` : ''}
-      <input type="text" data-base="${id}" value="${escapeHtml(p.baseUrl)}" title="URL base del endpoint">`;
+      ${p.needsKey ? `<input type="password" data-key="${id}" placeholder="${keyPlaceholder}" autocomplete="off">` : ''}
+      <input type="text" data-base="${id}" value="${escapeHtml(p.baseUrl)}" title="URL base del endpoint (vaciar = restaurar la URL por defecto)">`;
     cont.appendChild(div);
   }
   $('modal-overlay').classList.remove('hidden');
@@ -597,29 +600,45 @@ async function saveSettings() {
   const keys = {}, baseUrls = {};
   document.querySelectorAll('[data-key]').forEach(inp => {
     const v = inp.value.trim();
-    if (!v) keys[inp.dataset.key] = null;
-    else if (v === '-') keys[inp.dataset.key] = '';
+    if (!v) keys[inp.dataset.key] = null;          // vacío = no cambiar
+    else if (v === '-') keys[inp.dataset.key] = ''; // "-" = borrar
     else keys[inp.dataset.key] = v;
   });
   document.querySelectorAll('[data-base]').forEach(inp => {
-    baseUrls[inp.dataset.base] = inp.value.trim() || null;
+    baseUrls[inp.dataset.base] = inp.value.trim(); // '' = restaurar por defecto
   });
-  await fetch('/api/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      workspace: $('cfg-workspace').value.trim(),
-      autoApprove: {
-        read: $('cfg-auto-read').checked,
-        write: $('cfg-auto-write').checked,
-        command: $('cfg-auto-command').checked
-      },
-      keys, baseUrls
-    })
-  });
-  $('modal-overlay').classList.add('hidden');
-  await loadConfig();
-  refreshLocalStatus();
+  const btn = $('btn-save-config');
+  btn.disabled = true;
+  btn.textContent = 'Guardando…';
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workspace: $('cfg-workspace').value.trim(),
+        autoApprove: {
+          read: $('cfg-auto-read').checked,
+          write: $('cfg-auto-write').checked,
+          command: $('cfg-auto-command').checked
+        },
+        keys, baseUrls
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) throw new Error(data.error || 'HTTP ' + res.status);
+    await loadConfig();
+    refreshLocalStatus();
+    btn.textContent = '✓ Guardado';
+    setTimeout(() => {
+      $('modal-overlay').classList.add('hidden');
+      btn.textContent = 'Guardar';
+      btn.disabled = false;
+    }, 600);
+  } catch (err) {
+    btn.textContent = 'Guardar';
+    btn.disabled = false;
+    alert('No se pudo guardar la configuración: ' + err.message);
+  }
 }
 
 // ---------- Eventos ----------
