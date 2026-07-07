@@ -541,7 +541,16 @@ async function loadModels(preselect) {
     if (!data.models.length) sel.innerHTML = '<option value="">(sin modelos)</option>';
     if (preselect && data.models.includes(preselect)) sel.value = preselect;
   } catch (err) {
-    sel.innerHTML = `<option value="">(${escapeHtml(err.message).slice(0, 60)})</option>`;
+    const p = state.config?.providers?.[provider];
+    let msg = err.message || 'error';
+    if (p?.local && /fetch failed|ECONNREFUSED/i.test(msg)) {
+      msg = provider === 'lmstudio'
+        ? 'LM Studio apagado — Developer → Start Server'
+        : 'Ollama apagado — ejecuta "ollama serve"';
+    } else if (/Falta la API key/i.test(msg)) {
+      msg = 'añade la API key en ⚙ Ajustes';
+    }
+    sel.innerHTML = `<option value="">(${escapeHtml(msg).slice(0, 70)})</option>`;
   }
   updateCaps();
 }
