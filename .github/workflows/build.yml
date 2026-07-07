@@ -7,6 +7,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   check:
     runs-on: windows-latest
@@ -45,10 +48,26 @@ jobs:
       - run: npm run build:exe
       - run: Rename-Item dist/dedlit-studio.exe dedlit-studio-win-x64.exe
         shell: pwsh
+      # Los artefactos consumen cuota de almacenamiento (limitada en repos
+      # privados): son solo una comodidad para builds de main, no deben
+      # tumbar el workflow si la cuota está llena
       - uses: actions/upload-artifact@v4
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        continue-on-error: true
         with:
           name: dedlit-studio-win-x64
           path: dist/dedlit-studio-win-x64.exe
+          retention-days: 1
+      # En las releases los binarios van directos a los assets de la release,
+      # que no consumen cuota de artefactos
+      - name: Publicar en release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" --title "$env:GITHUB_REF_NAME" --generate-notes 2>$null; if (-not $?) { "release ya existe" }
+          gh release upload "$env:GITHUB_REF_NAME" dist/dedlit-studio-win-x64.exe --clobber
 
   exe-macos:
     # En macOS pkg firma (ad-hoc) los binarios automáticamente,
@@ -66,23 +85,18 @@ jobs:
           mv dist/dedlit-studio-x64 dist/dedlit-studio-macos-x64
           mv dist/dedlit-studio-arm64 dist/dedlit-studio-macos-arm64
       - uses: actions/upload-artifact@v4
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        continue-on-error: true
         with:
           name: dedlit-studio-macos
           path: |
             dist/dedlit-studio-macos-x64
             dist/dedlit-studio-macos-arm64
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    needs: [exe-windows, exe-macos]
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
-          path: dist
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
+          retention-days: 1
+      - name: Publicar en release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes 2>/dev/null || echo "release ya existe"
+          gh release upload "$GITHUB_REF_NAME" dist/dedlit-studio-macos-x64 dist/dedlit-studio-macos-arm64 --clobber
