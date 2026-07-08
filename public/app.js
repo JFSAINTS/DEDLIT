@@ -506,15 +506,27 @@ async function transcribeAudio({ provider, model, note }) {
 
 // ---------- Proveedores y modelos ----------
 
+const GROUP_LABELS = { local: '💻 Locales', free: '🎁 Nube — con nivel gratuito', paid: '💳 Nube — de pago' };
+
 async function loadConfig() {
   state.config = await (await fetch('/api/config')).json();
   const sel = $('sel-provider');
   sel.innerHTML = '';
+  const byGroup = {};
   for (const [id, p] of Object.entries(state.config.providers)) {
-    const opt = document.createElement('option');
-    opt.value = id;
-    opt.textContent = p.name + (p.needsKey && !p.hasKey ? ' (sin key)' : '');
-    sel.appendChild(opt);
+    (byGroup[p.group] ??= []).push([id, p]);
+  }
+  for (const g of ['local', 'free', 'paid']) {
+    if (!byGroup[g]) continue;
+    const og = document.createElement('optgroup');
+    og.label = GROUP_LABELS[g];
+    for (const [id, p] of byGroup[g]) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = p.name + (p.needsKey && !p.hasKey ? ' (sin key)' : '');
+      og.appendChild(opt);
+    }
+    sel.appendChild(og);
   }
   if (state.config.lastProvider && state.config.providers[state.config.lastProvider]) {
     sel.value = state.config.lastProvider;
@@ -587,8 +599,10 @@ function openSettings() {
     const keyPlaceholder = p.hasKey
       ? '●●●●●●●● guardada — escribe para reemplazar; un guion (-) para borrar'
       : 'API key — vacío: no cambiar; un guion (-): borrar';
+    const keyLink = p.needsKey && p.keyUrl
+      ? `<span class="key-link"><a href="${escapeHtml(p.keyUrl)}" target="_blank" rel="noopener">obtener API key ↗</a></span>` : '';
     div.innerHTML = `
-      <div class="pname">${escapeHtml(p.name)} ${badge}</div>
+      <div class="pname">${escapeHtml(p.name)} ${badge} ${keyLink}</div>
       ${p.needsKey ? `<input type="password" data-key="${id}" placeholder="${keyPlaceholder}" autocomplete="off">` : ''}
       <input type="text" data-base="${id}" value="${escapeHtml(p.baseUrl)}" title="URL base del endpoint (vaciar = restaurar la URL por defecto)">`;
     cont.appendChild(div);
@@ -641,6 +655,51 @@ async function saveSettings() {
   }
 }
 
+// ---------- APIs gratuitas ----------
+
+// Resumen curado de servicios con nivel gratuito (fuente y lista completa:
+// github.com/cheahjs/free-llm-api-resources). Los límites cambian a menudo.
+const FREE_RESOURCES = [
+  { id: 'openrouter', icon: '🔀', desc: 'Cientos de modelos de todos los proveedores en un solo sitio; los que llevan sufijo <code>:free</code> no cuestan nada (~50 peticiones/día, más si haces un depósito único).' },
+  { id: 'google', icon: '✨', desc: 'Gemini con nivel gratuito generoso vía AI Studio (Flash: cientos de peticiones al día). También genera imágenes. La opción gratuita más completa.' },
+  { id: 'groq', icon: '⚡', desc: 'Inferencia ultrarrápida de Llama, Qwen, GPT-OSS y Whisper (transcripción) gratis con límites por minuto y día.' },
+  { id: 'mistral', icon: '🌬️', desc: 'La Plateforme tiene tier gratuito experimental (requiere verificar teléfono): todos sus modelos, 1 petición/segundo.' },
+  { id: 'cerebras', icon: '🧠', desc: 'Llama, Qwen y GPT-OSS a velocidad récord; nivel gratuito de ~14.000 peticiones/día.' },
+  { id: 'githubmodels', icon: '🐙', desc: 'GPT, Llama, DeepSeek, Grok y más gratis con tu cuenta de GitHub: crea un token clásico (PAT) sin permisos extra y úsalo como key.' },
+  { id: 'nvidia', icon: '💚', desc: 'NVIDIA NIM: DeepSeek, Llama, Qwen y decenas de modelos abiertos gratis registrándote en build.nvidia.com.' },
+  { id: 'huggingface', icon: '🤗', desc: 'Router serverless con multitud de modelos abiertos; crédito mensual gratuito según el tipo de cuenta.' }
+];
+
+function openFreeApis() {
+  const cont = $('free-list');
+  cont.innerHTML = '';
+  for (const r of FREE_RESOURCES) {
+    const p = state.config?.providers?.[r.id];
+    if (!p) continue;
+    const card = document.createElement('div');
+    card.className = 'free-card';
+    const badge = p.hasKey ? '<span class="badge key-ok">key configurada</span>' : '';
+    card.innerHTML = `
+      <div class="fname">${r.icon} ${escapeHtml(p.name)} ${badge}</div>
+      <div class="fdesc">${r.desc}</div>
+      <div class="factions">
+        <a href="${escapeHtml(p.keyUrl)}" target="_blank" rel="noopener">Obtener API key ↗</a>
+        <button data-configure="${r.id}">Pegar la key en Ajustes</button>
+      </div>`;
+    card.querySelector('[data-configure]').onclick = () => {
+      $('free-overlay').classList.add('hidden');
+      openSettings();
+      const input = document.querySelector(`[data-key="${r.id}"]`);
+      if (input) {
+        input.scrollIntoView({ block: 'center' });
+        input.focus();
+      }
+    };
+    cont.appendChild(card);
+  }
+  $('free-overlay').classList.remove('hidden');
+}
+
 // ---------- Eventos ----------
 
 $('btn-new-chat').onclick = newChat;
@@ -651,6 +710,9 @@ $('sel-model').onchange = updateCaps;
 $('inp-model-manual').oninput = updateCaps;
 $('btn-refresh-models').onclick = () => loadModels();
 $('btn-settings').onclick = openSettings;
+$('btn-free-apis').onclick = openFreeApis;
+$('btn-close-free').onclick = () => $('free-overlay').classList.add('hidden');
+$('free-overlay').onclick = e => { if (e.target.id === 'free-overlay') $('free-overlay').classList.add('hidden'); };
 $('btn-close-modal').onclick = () => $('modal-overlay').classList.add('hidden');
 $('btn-save-config').onclick = saveSettings;
 $('btn-vscode').onclick = async () => {

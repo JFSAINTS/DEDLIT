@@ -44,6 +44,7 @@
       </div>
 
       <div class="sidebar-footer">
+        <button id="btn-free-apis" title="Servicios con API gratuita para quien no tiene keys">🎁 APIs gratis</button>
         <button id="btn-vscode" title="Abrir el workspace en VS Code">⌨ VS Code</button>
         <button id="btn-settings" title="Configuración y API keys">⚙ Ajustes</button>
       </div>
@@ -58,6 +59,7 @@
           <ul>
             <li><b>Local:</b> Ollama y LM Studio se detectan automáticamente — nada sale de tu equipo.</li>
             <li><b>Nube:</b> Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi y GLM con tu propia API key (⚙ Ajustes).</li>
+            <li><b>¿Sin API key?</b> Pulsa <b>🎁 APIs gratis</b>: OpenRouter, Gemini, Groq, Cerebras, GitHub Models y más ofrecen nivel gratuito.</li>
             <li><b>Modo agente:</b> el modelo puede leer/escribir archivos y ejecutar comandos <i>con tu aprobación</i>.</li>
             <li><b>Multimedia:</b> adjunta imágenes, audio o vídeo con 📎 (según el modelo), y genera imágenes 🖼️, voz 🔊 o transcripciones 📝 con el selector de modo.</li>
             <li><b>VS Code:</b> apunta Continue/Cline al gateway <code id="gw-url">http://127.0.0.1:8642/v1</code>.</li>
@@ -86,9 +88,25 @@
     </main>
   </div>
 
+  <!-- Modal de APIs gratuitas -->
+  <div id="free-overlay" class="hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>🎁 APIs de IA gratuitas</h2>
+        <button id="btn-close-free">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint">¿No tienes API keys? Estos servicios ofrecen <b>nivel gratuito</b> — creas una cuenta, generas la key y la pegas en ⚙ Ajustes. Los límites cambian a menudo; lista completa y actualizada en
+        <a href="https://github.com/cheahjs/free-llm-api-resources" target="_blank" rel="noopener">cheahjs/free-llm-api-resources</a>.</p>
+        <p class="hint">⚠ Ten en cuenta que algunos niveles gratuitos pueden usar tus conversaciones para entrenar modelos — revisa las condiciones de cada servicio si la privacidad es crítica. Para privacidad total, usa Ollama o LM Studio en local.</p>
+        <div id="free-list"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal de ajustes -->
   <div id="modal-overlay" class="hidden">
-    <div id="modal">
+    <div class="modal-box">
       <div class="modal-header">
         <h2>⚙ Configuración</h2>
         <button id="btn-close-modal">✕</button>

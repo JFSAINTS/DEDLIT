@@ -29,22 +29,35 @@ Abre **http://127.0.0.1:8642** en el navegador. Puerto configurable con la varia
 
 ## Proveedores soportados
 
-| Proveedor | Tipo | Endpoint por defecto |
+| Proveedor | Grupo | Endpoint por defecto |
 |---|---|---|
-| Ollama | local | `http://localhost:11434/v1` |
-| LM Studio | local | `http://localhost:1234/v1` |
-| Anthropic (Claude) | nube | API nativa de Anthropic |
-| OpenAI | nube | `api.openai.com` |
-| Google (Gemini) | nube | endpoint OpenAI-compatible de Google |
-| xAI (Grok) | nube | `api.x.ai` — requiere API key de xAI* |
-| DeepSeek | nube | `api.deepseek.com` |
-| Alibaba Qwen | nube | DashScope (modo compatible) |
-| Moonshot (Kimi) | nube | `api.moonshot.ai` |
-| Zhipu (GLM) | nube | `open.bigmodel.cn` |
+| Ollama | local | `http://127.0.0.1:11434/v1` |
+| LM Studio | local | `http://127.0.0.1:1234/v1` |
+| Google (Gemini) | nivel gratuito | endpoint OpenAI-compatible de Google |
+| OpenRouter | nivel gratuito | `openrouter.ai` (modelos `:free`) |
+| Groq | nivel gratuito | `api.groq.com` |
+| Mistral | nivel gratuito | `api.mistral.ai` |
+| Cerebras | nivel gratuito | `api.cerebras.ai` |
+| GitHub Models | nivel gratuito | `models.github.ai` (key = token PAT de GitHub) |
+| NVIDIA NIM | nivel gratuito | `integrate.api.nvidia.com` |
+| Hugging Face | nivel gratuito | `router.huggingface.co` |
+| Anthropic (Claude) | de pago | API nativa de Anthropic |
+| OpenAI | de pago | `api.openai.com` |
+| xAI (Grok) | de pago | `api.x.ai` — requiere API key de xAI* |
+| DeepSeek | de pago | `api.deepseek.com` |
+| Alibaba Qwen | de pago | DashScope (modo compatible) |
+| Moonshot (Kimi) | de pago | `api.moonshot.ai` |
+| Zhipu (GLM) | de pago | `open.bigmodel.cn` |
 
-\* Grok vía suscripción X Premium no expone API pública; necesitas una API key de [console.x.ai](https://console.x.ai). Las URLs base son editables en Ajustes, así que puedes añadir cualquier endpoint OpenAI-compatible (vLLM, llama.cpp server, LiteLLM, etc.) reutilizando cualquiera de las ranuras.
+\* Grok vía suscripción X Premium no expone API pública; necesitas una API key de [console.x.ai](https://console.x.ai) (aunque OpenRouter y GitHub Models ofrecen modelos Grok en sus niveles gratuitos). Las URLs base son editables en Ajustes, así que puedes añadir cualquier endpoint OpenAI-compatible (vLLM, llama.cpp server, LiteLLM, etc.) reutilizando cualquiera de las ranuras.
 
 Los servidores locales (Ollama / LM Studio) se detectan automáticamente y su estado se muestra en la barra lateral. En LM Studio activa el servidor local (pestaña *Developer* → *Start Server*).
+
+## ¿Sin API key? — APIs gratuitas
+
+El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nivel gratuito (basado en [cheahjs/free-llm-api-resources](https://github.com/cheahjs/free-llm-api-resources)): qué ofrece cada uno, enlace directo para crear la key y acceso rápido a Ajustes para pegarla. Todos vienen preconfigurados como proveedores, sin tocar URLs.
+
+> Aviso: los límites gratuitos cambian a menudo y algunos servicios pueden usar tus conversaciones para entrenar modelos. Para privacidad total, usa Ollama o LM Studio en local.
 
 ## API keys y privacidad
 

@@ -64,6 +64,7 @@ async function handleApi(req, res, url) {
     for (const [id, p] of Object.entries(providers.REGISTRY)) {
       provs[id] = {
         name: p.name, needsKey: p.needsKey, local: !!p.local,
+        group: p.group || 'paid', keyUrl: p.keyUrl || '',
         hasKey: !!cfg.keys[id],
         baseUrl: cfg.baseUrls[id] || p.base
       };
