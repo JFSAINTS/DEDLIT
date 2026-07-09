@@ -217,6 +217,35 @@ async function handleApi(req, res, url) {
 
 // ---------- Bucle de chat / agente ----------
 
+// Herramienta generate_image del agente: usa el primer proveedor de imágenes
+// con key configurada y devuelve el marcador SHOWMEDIA para mostrarla al chat
+const IMAGE_PROVIDERS = [['openai', 'gpt-image-1'], ['xai', 'grok-2-image'], ['zhipu', 'cogview-4']];
+
+async function generateImageTool(args, cfg) {
+  let provider = args.provider;
+  let model = args.model;
+  if (!provider) {
+    for (const [p, m] of IMAGE_PROVIDERS) {
+      if (cfg.keys[p]) { provider = p; model = model || m; break; }
+    }
+  }
+  if (!provider) {
+    return 'ERROR: no hay ningún proveedor de generación de imágenes con API key configurada (OpenAI, xAI o Zhipu). Opciones: pedir al usuario que configure una key, o buscar una alternativa local (conector MCP, ComfyUI, Stable Diffusion).';
+  }
+  if (!model) model = (IMAGE_PROVIDERS.find(c => c[0] === provider) || [])[1] || 'gpt-image-1';
+  try {
+    const buf = await providers.generateImage({ providerId: provider, model, prompt: args.prompt, cfg });
+    const saved = media.saveBuffer(buf, '.png', 'img');
+    return 'SHOWMEDIA::' + JSON.stringify({
+      ref: saved.ref, kind: 'image',
+      caption: String(args.prompt || '').slice(0, 100),
+      forModel: '[Imagen generada con ' + provider + ':' + model + ' y mostrada al usuario en el chat. Archivo: ' + saved.file + ']'
+    });
+  } catch (err) {
+    return 'ERROR al generar la imagen con ' + provider + ': ' + err.message;
+  }
+}
+
 async function chatHandler(req, res, body, cfg) {
   const { provider, model, messages, agentMode } = body;
   if (!provider || !model || !Array.isArray(messages)) {
@@ -232,10 +261,8 @@ async function chatHandler(req, res, body, cfg) {
     msgs.unshift({ role: 'system', content: agent.systemPrompt(cfg.workspace) });
   }
   const newMessages = agentMode && msgs.length > messages.length ? [msgs[0]] : [];
-  let tools = null;
   if (agentMode) {
     try { await mcp.sync(cfg); } catch { /* los conectores no deben tumbar el chat */ }
-    tools = [...agent.TOOLS, ...mcp.getTools()];
   }
   const maxIter = cfg.maxAgentIterations || 25;
 
@@ -243,6 +270,9 @@ async function chatHandler(req, res, body, cfg) {
     for (let iter = 0; iter < maxIter && !aborted; iter++) {
       let text = '';
       let calls = [];
+      // Recalcular en cada vuelta: add_mcp_connector puede añadir herramientas
+      // en mitad de la conversación
+      const tools = agentMode ? [...agent.TOOLS, ...mcp.MANAGEMENT_TOOLS, ...mcp.getTools()] : null;
 
       const stream = providers.chatStream({
         providerId: provider, model, messages: media.resolveMessages(msgs), tools,
@@ -280,9 +310,12 @@ async function chatHandler(req, res, body, cfg) {
       msgs.push(assistantMsg);
       newMessages.push(assistantMsg);
 
+      const pendingMedia = []; // mensajes multimedia a insertar tras los tool results
       for (const call of calls) {
         if (aborted) break;
-        const category = mcp.isMcpTool(call.name) ? mcp.toolCategory(call.name) : agent.toolCategory(call.name);
+        const category = mcp.isManagementTool(call.name) ? mcp.MANAGEMENT_TOOLS.find(t => t.name === call.name).category
+          : mcp.isMcpTool(call.name) ? mcp.toolCategory(call.name)
+          : agent.toolCategory(call.name);
         const auto = cfg.autoApprove[category];
         let approved = true;
 
@@ -298,16 +331,44 @@ async function chatHandler(req, res, body, cfg) {
           });
         }
 
-        const result = !approved
+        let result = !approved
           ? '[El usuario rechazó la ejecución de esta herramienta. Pregunta cómo proceder o intenta otra vía.]'
-          : mcp.isMcpTool(call.name)
-            ? await mcp.execute(call.name, call.args)
-            : await agent.execute(call.name, call.args, cfg.workspace);
+          : call.name === 'generate_image'
+            ? await generateImageTool(call.args, cfg)
+            : mcp.isManagementTool(call.name)
+              ? await mcp.manage(call.name, call.args, cfg)
+              : mcp.isMcpTool(call.name)
+                ? await mcp.execute(call.name, call.args)
+                : await agent.execute(call.name, call.args, cfg.workspace);
+
+        // show_media / generate_image devuelven un marcador: emitir el medio
+        // al chat y darle al modelo solo un texto neutro
+        if (typeof result === 'string' && result.startsWith('SHOWMEDIA::')) {
+          try {
+            const info = JSON.parse(result.slice('SHOWMEDIA::'.length));
+            const parts = [];
+            if (info.caption) parts.push({ type: 'text', text: '📎 ' + info.caption });
+            parts.push(
+              info.kind === 'image' ? { type: 'image_url', image_url: { url: info.ref } }
+              : info.kind === 'audio' ? { type: 'input_audio', input_audio: { data: info.ref, format: 'mp3' } }
+              : { type: 'video_url', video_url: { url: info.ref } }
+            );
+            pendingMedia.push({ role: 'assistant', generated: true, content: parts });
+            sse(res, { type: 'media', content: parts });
+            result = info.forModel || '[Archivo multimedia mostrado al usuario.]';
+          } catch { /* marcador corrupto: dejar el texto tal cual */ }
+        }
 
         sse(res, { type: 'tool_result', id: call.id, approved, result: result.slice(0, 4000) });
         const toolMsg = { role: 'tool', tool_call_id: call.id, content: result };
         msgs.push(toolMsg);
         newMessages.push(toolMsg);
+      }
+      // insertar los medios después de todos los tool results del turno para
+      // no romper el emparejamiento tool_call → tool_result
+      for (const m of pendingMedia) {
+        msgs.push(m);
+        newMessages.push(m);
       }
     }
     sse(res, { type: 'error', message: 'Se alcanzó el máximo de iteraciones del agente (' + maxIter + ')' });

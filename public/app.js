@@ -424,6 +424,12 @@ async function sendMessage() {
           cont.scrollTop = cont.scrollHeight;
           break;
         }
+        case 'media': {
+          if (liveBubble) { liveBubble.classList.remove('typing'); liveBubble = null; liveText = ''; }
+          cont.appendChild(msgEl('assistant', renderParts(ev.content)));
+          cont.scrollTop = cont.scrollHeight;
+          break;
+        }
         case 'error':
           errorCard(ev.message);
           break;

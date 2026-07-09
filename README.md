@@ -74,6 +74,11 @@ Activa el interruptor **Modo agente** en la barra lateral. El modelo obtiene her
 - `run_command` — terminal (PowerShell en Windows, bash en macOS/Linux): instalar paquetes, ejecutar tests, `git`, `gh` para GitHub… (**requiere tu aprobación** por defecto)
 - `fetch_url` — leer páginas web o APIs como texto (**requiere tu aprobación** por defecto)
 - `open_in_browser` — abrir una URL en tu navegador por defecto (**requiere tu aprobación** por defecto)
+- `generate_image` — generar una imagen con tu proveedor de imágenes configurado y mostrarla en el chat
+- `show_media` — mostrar en el chat cualquier archivo local de imagen/audio/vídeo que produzca
+- `add_mcp_connector` / `list_mcp_connectors` — **ampliarse a sí mismo**: añadir conectores MCP en mitad de la conversación y usar sus herramientas al instante (**requiere tu aprobación**)
+
+El agente está orientado a objetivos: si le falta una capacidad para completar lo que pides (generar un vídeo, controlar el navegador…), buscará la forma — instalar una herramienta, leer documentación o añadir el conector adecuado — y te devolverá el resultado en el chat.
 
 Cada acción aparece como una tarjeta en el chat con los argumentos exactos; tú decides **Aprobar** o **Rechazar**. Las políticas de aprobación automática y el workspace raíz se cambian en ⚙ Ajustes.
 
