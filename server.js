@@ -12,6 +12,7 @@ const providers = require('./lib/providers');
 const agent = require('./lib/agent');
 const media = require('./lib/media');
 const mcp = require('./lib/mcp');
+const system = require('./lib/system');
 
 const PORT = Number(process.env.DEDLIT_PORT || 8642);
 const PUBLIC = path.join(__dirname, 'public');
@@ -75,6 +76,8 @@ async function handleApi(req, res, url) {
       workspace: cfg.workspace,
       autoApprove: cfg.autoApprove,
       mcpServers: cfg.mcpServers,
+      lmstudioModelsDir: cfg.lmstudioModelsDir || '',
+      lmstudioModelsDirDefault: path.join(require('os').homedir(), '.lmstudio', 'models'),
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
       lastModel: cfg.lastModel,
@@ -105,8 +108,87 @@ async function handleApi(req, res, url) {
     if (body.mcpServers && typeof body.mcpServers === 'object') {
       cfg.mcpServers = body.mcpServers;
     }
+    if (typeof body.lmstudioModelsDir === 'string') cfg.lmstudioModelsDir = body.lmstudioModelsDir.trim();
     configLib.save(cfg);
     return json(res, 200, { ok: true });
+  }
+
+  // Hardware local (RAM/GPU) para el semáforo de modelos
+  if (url.pathname === '/api/system' && req.method === 'GET') {
+    return json(res, 200, await system.detect());
+  }
+
+  // Buscador de modelos GGUF en Hugging Face (petición iniciada por el usuario)
+  if (url.pathname === '/api/hub/search' && req.method === 'GET') {
+    const q = url.searchParams.get('q') || '';
+    try {
+      const r = await fetch('https://huggingface.co/api/models?search=' + encodeURIComponent(q) +
+        '&filter=gguf&sort=downloads&direction=-1&limit=20');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const models = (await r.json()).map(m => ({
+        id: m.id || m.modelId,
+        downloads: m.downloads || 0,
+        likes: m.likes || 0,
+        updated: m.lastModified || ''
+      }));
+      return json(res, 200, { models });
+    } catch (err) {
+      return json(res, 502, { error: 'No se pudo consultar Hugging Face: ' + err.message });
+    }
+  }
+
+  // Archivos GGUF de un repo, con tamaño y semáforo según tu hardware
+  if (url.pathname === '/api/hub/files' && req.method === 'GET') {
+    const repo = url.searchParams.get('repo') || '';
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return json(res, 400, { error: 'repo no válido' });
+    try {
+      const r = await fetch('https://huggingface.co/api/models/' + repo + '?blobs=true');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const info = await r.json();
+      const sys = await system.detect();
+      // Agrupar GGUF multiparte (modelo-00001-of-00003.gguf…): el semáforo debe
+      // evaluar el tamaño TOTAL del modelo, no el de cada parte
+      const groups = new Map();
+      for (const s of (info.siblings || [])) {
+        if (!s.rfilename.toLowerCase().endsWith('.gguf')) continue;
+        const m = s.rfilename.match(/^(.*)-\d{5}-of-\d{5}\.gguf$/i);
+        const key = m ? m[1] + '.gguf' : s.rfilename;
+        const g = groups.get(key) || { file: key, size: 0, parts: 0 };
+        g.size += s.size || 0;
+        g.parts++;
+        groups.set(key, g);
+      }
+      const files = [...groups.values()]
+        .map(g => ({
+          file: g.file,
+          sizeGB: +(g.size / 1073741824).toFixed(2),
+          parts: g.parts,
+          verdict: system.verdict(g.size, sys)
+        }))
+        .sort((a, b) => a.sizeGB - b.sizeGB);
+      return json(res, 200, { repo, files, system: sys });
+    } catch (err) {
+      return json(res, 502, { error: 'No se pudo leer el repo: ' + err.message });
+    }
+  }
+
+  // Descarga de un GGUF (SSE con progreso). target: "lmstudio" | "ollama"
+  if (url.pathname === '/api/hub/download' && req.method === 'POST') {
+    const { repo, file, target } = await readBody(req);
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo || '') || !/^[\w./ -]+\.gguf$/i.test(file || '') || file.includes('..')) {
+      return json(res, 400, { error: 'Parámetros no válidos' });
+    }
+    sseStart(res);
+    try {
+      if (target === 'ollama') {
+        await ollamaPull(repo, file, res);
+      } else {
+        await downloadToLmStudio(repo, file, cfg, res);
+      }
+    } catch (err) {
+      sse(res, { type: 'error', message: err.message });
+    }
+    return res.end();
   }
 
   // Estado y recarga de conectores MCP
@@ -213,6 +295,67 @@ async function handleApi(req, res, url) {
   }
 
   json(res, 404, { error: 'Ruta no encontrada' });
+}
+
+// ---------- Descarga de modelos del hub ----------
+
+// Descarga un GGUF a la carpeta de modelos de LM Studio (estructura
+// editor/modelo/archivo.gguf, que LM Studio indexa automáticamente)
+async function downloadToLmStudio(repo, file, cfg, res) {
+  const os = require('os');
+  const baseDir = cfg.lmstudioModelsDir || path.join(os.homedir(), '.lmstudio', 'models');
+  const dest = path.join(baseDir, ...repo.split('/'), path.basename(file));
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+
+  const dl = await fetch(`https://huggingface.co/${repo}/resolve/main/${encodeURI(file)}`, { redirect: 'follow' });
+  if (!dl.ok) {
+    throw new Error('HTTP ' + dl.status + ' al descargar de Hugging Face' +
+      (dl.status === 401 || dl.status === 403 ? ' (repo privado o con acceso restringido)' : ''));
+  }
+  const total = +(dl.headers.get('content-length') || 0);
+  const tmp = dest + '.part';
+  const out = fs.createWriteStream(tmp);
+  let received = 0;
+  let lastPct = -1;
+  for await (const chunk of dl.body) {
+    out.write(chunk);
+    received += chunk.length;
+    const pct = total ? Math.floor(received / total * 100) : 0;
+    if (pct !== lastPct) {
+      lastPct = pct;
+      sse(res, { type: 'progress', pct, mb: +(received / 1048576).toFixed(0), totalMb: +(total / 1048576).toFixed(0) });
+    }
+  }
+  await new Promise(r => out.end(r));
+  fs.renameSync(tmp, dest);
+  sse(res, { type: 'done', path: dest, note: 'LM Studio lo indexará automáticamente (Mis modelos)' });
+}
+
+// Descarga vía Ollama: "ollama pull hf.co/repo:CUANT" (Ollama gestiona el registro)
+function ollamaPull(repo, file, res) {
+  return new Promise((resolve) => {
+    const quant = (file.match(/\b(I?Q\d[\w-]*?|F16|F32|BF16)\b(?=[.-])/i) || [])[0];
+    const ref = 'hf.co/' + repo + (quant ? ':' + quant.toUpperCase() : '');
+    sse(res, { type: 'progress', pct: 0, note: 'ollama pull ' + ref });
+    const child = spawn('ollama', ['pull', ref], { windowsHide: true, shell: process.platform === 'win32' });
+    let lastLine = '';
+    const onData = d => {
+      const line = d.toString().split('\n').filter(Boolean).pop() || '';
+      if (line && line !== lastLine) {
+        lastLine = line;
+        const pct = (line.match(/(\d+)%/) || [])[1];
+        sse(res, { type: 'progress', pct: pct ? +pct : undefined, note: line.replace(/\r|\[[^a-zA-Z]*[a-zA-Z]/g, '').slice(-120) });
+      }
+    };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.on('error', err => { sse(res, { type: 'error', message: 'No se pudo ejecutar ollama: ' + err.message + ' — ¿está instalado?' }); resolve(); });
+    child.on('close', code => {
+      if (code === 0) sse(res, { type: 'done', path: ref, note: 'Modelo registrado en Ollama como ' + ref });
+      else sse(res, { type: 'error', message: 'ollama pull terminó con código ' + code + '. ' + lastLine });
+      resolve();
+    });
+  });
 }
 
 // ---------- Bucle de chat / agente ----------

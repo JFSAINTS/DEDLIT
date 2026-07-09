@@ -141,9 +141,9 @@ button.mini:hover { color: var(--accent-hover); }
 .chat-item:hover .del { visibility: visible; }
 .chat-item .del:hover { color: var(--red); }
 
-.sidebar-footer { display: flex; gap: 6px; }
+.sidebar-footer { display: flex; gap: 6px; flex-wrap: wrap; }
 .sidebar-footer button {
-  flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+  flex: 1 1 calc(50% - 3px); background: var(--bg-input); border: 1px solid var(--border);
   color: var(--text); padding: 8px 4px; border-radius: 8px; cursor: pointer; font-size: 12px;
   white-space: nowrap;
 }
@@ -324,6 +324,44 @@ button.mini:hover { color: var(--accent-hover); }
 .provider-cfg input { font-size: 12.5px; }
 
 .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
+
+/* Buscador de modelos */
+.modal-box.wide { width: 760px; }
+.hub-system {
+  font-size: 12.5px; color: var(--text-dim);
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px;
+}
+.hub-search-row { display: flex; gap: 8px; margin-top: 4px; }
+.hub-search-row button { white-space: nowrap; }
+.hub-model {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 13px; margin-top: 8px; cursor: pointer;
+}
+.hub-model:hover { border-color: var(--accent); }
+.hub-model .hm-head { display: flex; align-items: center; gap: 10px; }
+.hub-model .hm-id { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
+.hub-model .hm-meta { margin-left: auto; font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
+.hub-files { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.hub-file {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; padding: 6px 8px; border-radius: 7px;
+  background: var(--bg-input); flex-wrap: wrap;
+}
+.hub-file .hf-name { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+.hub-file .hf-size { color: var(--text-dim); white-space: nowrap; }
+.hub-file .hf-verdict { color: var(--text-dim); font-size: 11.5px; flex: 1; min-width: 120px; }
+.hub-file .hf-actions { display: flex; gap: 6px; margin-left: auto; }
+.hub-file .hf-actions button {
+  font-size: 11.5px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  background: var(--bg-panel); border: 1px solid var(--border); color: var(--text);
+}
+.hub-file .hf-actions button:hover { border-color: var(--accent); color: var(--accent-hover); }
+.hub-progress { flex-basis: 100%; font-size: 11.5px; color: var(--accent-hover); }
+.hub-progress .bar {
+  height: 5px; background: var(--bg-panel); border-radius: 3px; overflow: hidden; margin-top: 3px;
+}
+.hub-progress .bar > div { height: 100%; background: var(--accent); transition: width 0.3s; }
 
 /* Tarjetas de APIs gratuitas */
 .free-card {

@@ -11,6 +11,7 @@ Frontend local y privado de IA. **Cero dependencias en runtime** (solo Node ≥ 
 - Autoextensión: la lista de herramientas se recalcula en **cada iteración** del bucle del agente (server.js), para que un conector recién añadido aporte herramientas en la misma conversación. `show_media`/`generate_image` devuelven el marcador `SHOWMEDIA::{json}`; el servidor lo detecta, emite el evento SSE `media` al chat y sustituye el resultado por texto neutro antes de reenviarlo al modelo. `generate_image` y las herramientas de gestión MCP se ejecutan en server.js (necesitan cfg), el resto en agent.js.
 - `lib/config.js` — configuración en `%USERPROFILE%\.dedlit\`; API keys cifradas con AES-256-GCM (clave en `secret.key`).
 - `lib/media.js` — almacén de medios en `~/.dedlit/media`. El historial guarda referencias `media:archivo`; se resuelven a data-URIs/base64 justo antes de llamar al proveedor (`resolveMessages`). Los mensajes con `generated: true` se reducen a texto al reenviarse.
+- `lib/system.js` — detección de hardware (RAM; VRAM vía nvidia-smi → registro de Windows → memoria unificada en macOS arm64) y `verdict()` (semáforo 🟢🟡🔴 para GGUF: necesita ≈ tamaño×1.15 + 1.5 GB). Rutas `/api/system` y `/api/hub/*` (búsqueda HF, archivos con multiparte agrupado, descarga SSE a LM Studio u `ollama pull hf.co/...`).
 - `public/` — cliente en HTML/CSS/JS puro. `app.js` mantiene los chats en localStorage (solo referencias a medios, nunca binarios). El renderizador Markdown es propio; los bloques de código usan marcadores `\uE000N\uE001`.
 
 ## Flujo del modo agente

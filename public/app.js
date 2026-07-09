@@ -611,6 +611,8 @@ async function refreshMcpStatus(reload) {
 function openSettings() {
   const c = state.config;
   $('cfg-workspace').value = c.workspace;
+  $('cfg-lmdir').value = c.lmstudioModelsDir || '';
+  $('cfg-lmdir').placeholder = c.lmstudioModelsDirDefault || '~/.lmstudio/models';
   $('cfg-auto-read').checked = c.autoApprove.read;
   $('cfg-auto-write').checked = c.autoApprove.write;
   $('cfg-auto-command').checked = c.autoApprove.command;
@@ -669,6 +671,7 @@ async function saveSettings() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         workspace: $('cfg-workspace').value.trim(),
+        lmstudioModelsDir: $('cfg-lmdir').value.trim(),
         autoApprove: {
           read: $('cfg-auto-read').checked,
           write: $('cfg-auto-write').checked,
@@ -693,6 +696,129 @@ async function saveSettings() {
     btn.textContent = 'Guardar';
     btn.disabled = false;
     alert('No se pudo guardar la configuración: ' + err.message);
+  }
+}
+
+// ---------- Buscador de modelos (Hugging Face) ----------
+
+const LIGHT = { green: '🟢', yellow: '🟡', red: '🔴' };
+
+async function openHub() {
+  $('hub-overlay').classList.remove('hidden');
+  $('hub-query').focus();
+  try {
+    const sys = await (await fetch('/api/system')).json();
+    const gpuTxt = sys.gpus.length
+      ? sys.gpus.map(g => `${g.name} (${g.vramGB} GB VRAM)`).join(' + ')
+      : 'sin GPU dedicada detectada';
+    $('hub-system').innerHTML = `💾 RAM: <b>${sys.ramGB} GB</b> &nbsp;·&nbsp; 🎮 ${escapeHtml(gpuTxt)}` +
+      (sys.unified ? ' · memoria unificada' : '');
+  } catch {
+    $('hub-system').textContent = 'No se pudo detectar el hardware';
+  }
+}
+
+async function hubSearch() {
+  const q = $('hub-query').value.trim();
+  if (!q) return;
+  const cont = $('hub-results');
+  cont.innerHTML = '<p class="hint">Buscando en Hugging Face…</p>';
+  try {
+    const res = await fetch('/api/hub/search?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    cont.innerHTML = data.models.length ? '' : '<p class="hint">Sin resultados GGUF para esa búsqueda.</p>';
+    for (const m of data.models) {
+      const card = document.createElement('div');
+      card.className = 'hub-model';
+      card.innerHTML = `
+        <div class="hm-head">
+          <span class="hm-id">${escapeHtml(m.id)}</span>
+          <span class="hm-meta">⬇ ${(m.downloads).toLocaleString('es')} · ♥ ${m.likes}</span>
+        </div>
+        <div class="hub-files hidden"></div>`;
+      card.querySelector('.hm-head').onclick = () => hubFiles(m.id, card.querySelector('.hub-files'));
+      cont.appendChild(card);
+    }
+  } catch (err) {
+    cont.innerHTML = `<p class="hint">⚠ ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function hubFiles(repo, cont) {
+  if (!cont.classList.contains('hidden')) { cont.classList.add('hidden'); return; }
+  cont.classList.remove('hidden');
+  cont.innerHTML = '<p class="hint">Leyendo archivos…</p>';
+  try {
+    const res = await fetch('/api/hub/files?repo=' + encodeURIComponent(repo));
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    cont.innerHTML = data.files.length ? '' : '<p class="hint">Este repo no tiene archivos GGUF.</p>';
+    for (const f of data.files) {
+      const row = document.createElement('div');
+      row.className = 'hub-file';
+      const multi = f.parts > 1;
+      row.innerHTML = `
+        <span>${LIGHT[f.verdict.level]}</span>
+        <span class="hf-name" title="${escapeHtml(f.file)}">${escapeHtml(f.file)}</span>
+        <span class="hf-size">${f.sizeGB} GB${multi ? ` (${f.parts} partes)` : ''}</span>
+        <span class="hf-verdict">${escapeHtml(f.verdict.label)} (necesita ~${f.verdict.needGB} GB)</span>
+        <span class="hf-actions">
+          ${multi ? '' : '<button data-t="lmstudio" title="Descargar a la carpeta de modelos de LM Studio">⬇ LM Studio</button>'}
+          <button data-t="ollama" title="Registrar en Ollama (ollama pull hf.co/…); gestiona multiparte automáticamente">⬇ Ollama</button>
+        </span>`;
+      row.querySelectorAll('.hf-actions button').forEach(btn => {
+        btn.onclick = () => hubDownload(repo, f.file, btn.dataset.t, row);
+      });
+      cont.appendChild(row);
+    }
+  } catch (err) {
+    cont.innerHTML = `<p class="hint">⚠ ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function hubDownload(repo, file, target, row) {
+  row.querySelector('.hf-actions').classList.add('hidden');
+  const prog = document.createElement('div');
+  prog.className = 'hub-progress';
+  prog.innerHTML = '<span class="ptext">Iniciando descarga…</span><div class="bar"><div style="width:0%"></div></div>';
+  row.appendChild(prog);
+  const ptext = prog.querySelector('.ptext');
+  const bar = prog.querySelector('.bar > div');
+  try {
+    const res = await fetch('/api/hub/download', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo, file, target })
+    });
+    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, i).split('\n').find(l => l.startsWith('data: '));
+        buf = buf.slice(i + 2);
+        if (!line) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === 'progress') {
+          if (ev.pct !== undefined) bar.style.width = ev.pct + '%';
+          ptext.textContent = (ev.pct !== undefined ? ev.pct + '% ' : '') +
+            (ev.mb ? `(${ev.mb}/${ev.totalMb} MB)` : '') + (ev.note ? ' ' + ev.note : '');
+        } else if (ev.type === 'done') {
+          bar.style.width = '100%';
+          ptext.textContent = '✓ ' + (ev.note || 'Descargado') + ' — ' + ev.path;
+        } else if (ev.type === 'error') {
+          throw new Error(ev.message);
+        }
+      }
+    }
+  } catch (err) {
+    ptext.textContent = '⚠ ' + err.message;
+    row.querySelector('.hf-actions').classList.remove('hidden');
   }
 }
 
@@ -767,6 +893,11 @@ $('btn-mcp-reload').onclick = async e => {
   btn.textContent = '⟳ probar';
 };
 $('btn-free-apis').onclick = openFreeApis;
+$('btn-hub').onclick = openHub;
+$('btn-close-hub').onclick = () => $('hub-overlay').classList.add('hidden');
+$('hub-overlay').onclick = e => { if (e.target.id === 'hub-overlay') $('hub-overlay').classList.add('hidden'); };
+$('btn-hub-search').onclick = hubSearch;
+$('hub-query').addEventListener('keydown', e => { if (e.key === 'Enter') hubSearch(); });
 $('btn-close-free').onclick = () => $('free-overlay').classList.add('hidden');
 $('free-overlay').onclick = e => { if (e.target.id === 'free-overlay') $('free-overlay').classList.add('hidden'); };
 $('btn-close-modal').onclick = () => $('modal-overlay').classList.add('hidden');

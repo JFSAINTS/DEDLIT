@@ -53,6 +53,16 @@ Abre **http://127.0.0.1:8642** en el navegador. Puerto configurable con la varia
 
 Los servidores locales (Ollama / LM Studio) se detectan automáticamente y su estado se muestra en la barra lateral. En LM Studio activa el servidor local (pestaña *Developer* → *Start Server*).
 
+## Buscador de modelos con semáforo (🧲)
+
+El botón **🧲 Modelos** abre un buscador de **Hugging Face** integrado (modelos GGUF, los que usan LM Studio y Ollama). DEDLIT detecta tu hardware —RAM y VRAM de la GPU (nvidia-smi o registro de Windows; memoria unificada en Apple Silicon)— y muestra un **semáforo por cada cuantización**:
+
+- 🟢 cabe entero en la GPU (rápido)
+- 🟡 carga parcial GPU+CPU, o solo CPU (funciona, más lento)
+- 🔴 no cabe en la memoria del equipo
+
+Los GGUF multiparte se evalúan por su **tamaño total**, no por archivo. Cada cuantización tiene descarga directa: **⬇ LM Studio** (a la carpeta de modelos, configurable en Ajustes, con estructura `editor/modelo/` que LM Studio indexa solo) u **⬇ Ollama** (`ollama pull hf.co/repo:CUANT`, que gestiona también los multiparte). La búsqueda consulta huggingface.co únicamente cuando tú la lanzas.
+
 ## ¿Sin API key? — APIs gratuitas
 
 El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nivel gratuito (basado en [cheahjs/free-llm-api-resources](https://github.com/cheahjs/free-llm-api-resources)): qué ofrece cada uno, enlace directo para crear la key y acceso rápido a Ajustes para pegarla. Todos vienen preconfigurados como proveedores, sin tocar URLs.
