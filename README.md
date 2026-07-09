@@ -177,9 +177,9 @@ El runtime sigue siendo cero-dependencias; `@yao-pkg/pkg` es solo `devDependency
 
 - [ ] Historial de chats en disco (ahora vive en localStorage del navegador)
 - [ ] Búsqueda en conversaciones y exportación (Markdown/JSON)
-- [ ] Herramienta de búsqueda de archivos para el agente (grep/glob nativos)
+- [x] Herramienta de búsqueda de archivos para el agente (`search_files`, v0.3.0)
 - [ ] Soporte de herramientas (function calling) en el gateway /v1
-- [ ] MCP (Model Context Protocol) como fuente de herramientas del agente
+- [x] MCP (Model Context Protocol) como fuente de herramientas del agente (v0.3.0, autoextensible desde v0.4.0)
 - [ ] Generación de imágenes con Stable Diffusion local (Automatic1111/ComfyUI)
 - [ ] Empaquetado para Linux (`pkg` ya lo permite añadiendo `node22-linux-x64` a los targets)
 
