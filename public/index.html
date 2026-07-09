@@ -36,10 +36,12 @@
         <label>Servidores locales</label>
         <div class="status-row"><span class="dot" id="dot-ollama"></span> Ollama <span class="status-detail" id="detail-ollama"></span></div>
         <div class="status-row"><span class="dot" id="dot-lmstudio"></span> LM Studio <span class="status-detail" id="detail-lmstudio"></span></div>
+        <div class="status-row" title="Automatic1111/SD.Next/Forge con --api: generación de imágenes local y gratuita"><span class="dot" id="dot-sd"></span> Stable Diffusion <span class="status-detail" id="detail-sd"></span></div>
       </div>
 
       <div class="sidebar-section grow">
         <label>Conversaciones</label>
+        <input type="text" id="inp-chat-search" placeholder="🔍 Buscar en el historial…">
         <div id="chat-list"></div>
       </div>
 
@@ -53,6 +55,12 @@
 
     <!-- Zona principal -->
     <main id="main">
+      <div id="chat-toolbar" class="hidden">
+        <span id="chat-title"></span>
+        <button id="btn-regenerate" title="Regenerar la última respuesta">↻ Regenerar</button>
+        <a id="btn-export-md" title="Exportar a Markdown">⬇ MD</a>
+        <a id="btn-export-json" title="Exportar a JSON">⬇ JSON</a>
+      </div>
       <div id="messages">
         <div class="welcome" id="welcome">
           <h1>◆ DEDLIT Studio</h1>
@@ -141,6 +149,14 @@
         <h3>Carpeta de modelos de LM Studio</h3>
         <input type="text" id="cfg-lmdir" placeholder="">
         <p class="hint">Donde el buscador 🧲 descarga los GGUF para LM Studio. Vacío = la carpeta estándar.</p>
+
+        <h3>Stable Diffusion local</h3>
+        <input type="text" id="cfg-sdurl" placeholder="http://127.0.0.1:7860">
+        <p class="hint">URL de Automatic1111 / SD.Next / Forge (arráncalo con <code>--api</code>). Si está activo, la generación de imágenes lo usa automáticamente: gratis y 100% privada.</p>
+
+        <h3>Instrucciones personalizadas</h3>
+        <textarea id="cfg-instructions" rows="3" placeholder="P. ej.: Responde siempre en español. Sé conciso. Cuando escribas código, coméntalo."></textarea>
+        <p class="hint">Se añaden como instrucciones de sistema a todas tus conversaciones (chat y agente).</p>
 
         <h3>Aprobaciones automáticas del agente</h3>
         <label class="check-row"><input type="checkbox" id="cfg-auto-read"> Lectura (listar directorios, leer archivos)</label>

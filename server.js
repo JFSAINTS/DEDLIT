@@ -13,6 +13,7 @@ const agent = require('./lib/agent');
 const media = require('./lib/media');
 const mcp = require('./lib/mcp');
 const system = require('./lib/system');
+const chats = require('./lib/chats');
 
 const PORT = Number(process.env.DEDLIT_PORT || 8642);
 const PUBLIC = path.join(__dirname, 'public');
@@ -78,6 +79,8 @@ async function handleApi(req, res, url) {
       mcpServers: cfg.mcpServers,
       lmstudioModelsDir: cfg.lmstudioModelsDir || '',
       lmstudioModelsDirDefault: path.join(require('os').homedir(), '.lmstudio', 'models'),
+      sdWebuiUrl: cfg.sdWebuiUrl || 'http://127.0.0.1:7860',
+      customInstructions: cfg.customInstructions || '',
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
       lastModel: cfg.lastModel,
@@ -109,8 +112,56 @@ async function handleApi(req, res, url) {
       cfg.mcpServers = body.mcpServers;
     }
     if (typeof body.lmstudioModelsDir === 'string') cfg.lmstudioModelsDir = body.lmstudioModelsDir.trim();
+    if (typeof body.sdWebuiUrl === 'string') cfg.sdWebuiUrl = body.sdWebuiUrl.trim() || 'http://127.0.0.1:7860';
+    if (typeof body.customInstructions === 'string') cfg.customInstructions = body.customInstructions;
     configLib.save(cfg);
     return json(res, 200, { ok: true });
+  }
+
+  // ----- Historial de conversaciones en disco -----
+  if (url.pathname === '/api/chats' && req.method === 'GET') {
+    return json(res, 200, { chats: chats.list() });
+  }
+  if (url.pathname === '/api/chats' && req.method === 'POST') {
+    const body = await readBody(req, 60 * 1024 * 1024);
+    if (!body.chat || !Array.isArray(body.chat.messages)) return json(res, 400, { error: 'Falta chat.messages' });
+    return json(res, 200, { id: chats.save(body.chat) });
+  }
+  if (url.pathname === '/api/chats/search' && req.method === 'GET') {
+    const q = url.searchParams.get('q') || '';
+    return json(res, 200, { results: q.trim() ? chats.search(q.trim()) : [] });
+  }
+  {
+    const m = url.pathname.match(/^\/api\/chats\/([\w-]+)\/export$/);
+    if (m && req.method === 'GET') {
+      const chat = chats.get(m[1]);
+      if (!chat) return json(res, 404, { error: 'Chat no encontrado' });
+      const format = url.searchParams.get('format') || 'md';
+      const safeTitle = (chat.title || 'chat').replace(/[^\w áéíóúñ-]/gi, '').trim().slice(0, 40) || 'chat';
+      if (format === 'json') {
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${encodeURIComponent(safeTitle)}.json"`
+        });
+        return res.end(JSON.stringify(chat, null, 2));
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(safeTitle)}.md"`
+      });
+      return res.end(chats.toMarkdown(chat));
+    }
+  }
+  {
+    const m = url.pathname.match(/^\/api\/chats\/([\w-]+)$/);
+    if (m && req.method === 'GET') {
+      const chat = chats.get(m[1]);
+      return chat ? json(res, 200, chat) : json(res, 404, { error: 'Chat no encontrado' });
+    }
+    if (m && req.method === 'DELETE') {
+      chats.remove(m[1]);
+      return json(res, 200, { ok: true });
+    }
   }
 
   // Hardware local (RAM/GPU) para el semáforo de modelos
@@ -211,13 +262,14 @@ async function handleApi(req, res, url) {
     }
   }
 
-  // Estado de servidores locales (Ollama / LM Studio)
+  // Estado de servidores locales (Ollama / LM Studio / Stable Diffusion)
   if (url.pathname === '/api/status' && req.method === 'GET') {
-    const [ollama, lmstudio] = await Promise.all([
+    const [ollama, lmstudio, sd] = await Promise.all([
       providers.checkLocal('ollama', cfg),
-      providers.checkLocal('lmstudio', cfg)
+      providers.checkLocal('lmstudio', cfg),
+      providers.sdCheck(cfg)
     ]);
-    return json(res, 200, { ollama, lmstudio });
+    return json(res, 200, { ollama, lmstudio, sd });
   }
 
   // Aprobación de una herramienta del agente
@@ -254,12 +306,17 @@ async function handleApi(req, res, url) {
     }
   }
 
-  // Generar imagen (OpenAI, xAI grok-2-image, Zhipu cogview, etc.)
+  // Generar imagen: Stable Diffusion local o nube (OpenAI, xAI, Zhipu),
+  // con selección automática si el proveedor actual no genera imágenes
   if (url.pathname === '/api/generate/image' && req.method === 'POST') {
-    const { provider, model, prompt, size } = await readBody(req);
+    const { provider, model, prompt } = await readBody(req);
     try {
-      const buf = await providers.generateImage({ providerId: provider, model, prompt, size, cfg });
-      return json(res, 200, media.saveBuffer(buf, '.png', 'img'));
+      const backend = await pickImageBackend(provider, model, cfg);
+      if (!backend) {
+        throw new Error('Sin backend de imágenes: arranca Stable Diffusion (Automatic1111 con --api) o configura una key de OpenAI/xAI/Zhipu.');
+      }
+      const { buf, label } = await generateImageBuffer(backend, prompt, cfg);
+      return json(res, 200, { ...media.saveBuffer(buf, '.png', 'img'), backend: label });
     } catch (err) {
       return json(res, 502, { error: err.message });
     }
@@ -360,32 +417,46 @@ function ollamaPull(repo, file, res) {
 
 // ---------- Bucle de chat / agente ----------
 
-// Herramienta generate_image del agente: usa el primer proveedor de imágenes
-// con key configurada y devuelve el marcador SHOWMEDIA para mostrarla al chat
-const IMAGE_PROVIDERS = [['openai', 'gpt-image-1'], ['xai', 'grok-2-image'], ['zhipu', 'cogview-4']];
+// Backends de generación de imagen. Prioridad en modo automático:
+// Stable Diffusion local (gratis y privado) → nube con key configurada.
+const IMAGE_CLOUD = [['openai', 'gpt-image-1'], ['xai', 'grok-2-image'], ['zhipu', 'cogview-4']];
+
+async function pickImageBackend(provider, model, cfg) {
+  if (provider === 'sdwebui' || provider === 'sd') return { kind: 'sd' };
+  const cloud = IMAGE_CLOUD.find(c => c[0] === provider);
+  if (cloud) return { kind: 'cloud', provider, model: model || cloud[1] };
+  // automático
+  const sd = await providers.sdCheck(cfg);
+  if (sd.online) return { kind: 'sd' };
+  for (const [p, m] of IMAGE_CLOUD) {
+    if (cfg.keys[p]) return { kind: 'cloud', provider: p, model: m };
+  }
+  return null;
+}
+
+async function generateImageBuffer(backend, prompt, cfg) {
+  if (backend.kind === 'sd') {
+    return { buf: await providers.sdGenerate({ prompt, cfg }), label: 'Stable Diffusion local' };
+  }
+  const buf = await providers.generateImage({ providerId: backend.provider, model: backend.model, prompt, cfg });
+  return { buf, label: backend.provider + ':' + backend.model };
+}
 
 async function generateImageTool(args, cfg) {
-  let provider = args.provider;
-  let model = args.model;
-  if (!provider) {
-    for (const [p, m] of IMAGE_PROVIDERS) {
-      if (cfg.keys[p]) { provider = p; model = model || m; break; }
-    }
+  const backend = await pickImageBackend(args.provider, args.model, cfg);
+  if (!backend) {
+    return 'ERROR: no hay backend de imágenes disponible: ni Stable Diffusion local activo (Automatic1111 en ' + (cfg.sdWebuiUrl || 'http://127.0.0.1:7860') + ') ni API key de OpenAI/xAI/Zhipu. Opciones: pedir al usuario que arranque SD WebUI con --api o configure una key, o buscar un conector MCP.';
   }
-  if (!provider) {
-    return 'ERROR: no hay ningún proveedor de generación de imágenes con API key configurada (OpenAI, xAI o Zhipu). Opciones: pedir al usuario que configure una key, o buscar una alternativa local (conector MCP, ComfyUI, Stable Diffusion).';
-  }
-  if (!model) model = (IMAGE_PROVIDERS.find(c => c[0] === provider) || [])[1] || 'gpt-image-1';
   try {
-    const buf = await providers.generateImage({ providerId: provider, model, prompt: args.prompt, cfg });
+    const { buf, label } = await generateImageBuffer(backend, args.prompt, cfg);
     const saved = media.saveBuffer(buf, '.png', 'img');
     return 'SHOWMEDIA::' + JSON.stringify({
       ref: saved.ref, kind: 'image',
       caption: String(args.prompt || '').slice(0, 100),
-      forModel: '[Imagen generada con ' + provider + ':' + model + ' y mostrada al usuario en el chat. Archivo: ' + saved.file + ']'
+      forModel: '[Imagen generada con ' + label + ' y mostrada al usuario en el chat. Archivo: ' + saved.file + ']'
     });
   } catch (err) {
-    return 'ERROR al generar la imagen con ' + provider + ': ' + err.message;
+    return 'ERROR al generar la imagen: ' + err.message;
   }
 }
 
@@ -404,6 +475,14 @@ async function chatHandler(req, res, body, cfg) {
     msgs.unshift({ role: 'system', content: agent.systemPrompt(cfg.workspace) });
   }
   const newMessages = agentMode && msgs.length > messages.length ? [msgs[0]] : [];
+  // Instrucciones personalizadas: se añaden solo a la copia enviada al
+  // proveedor (nunca al historial guardado, para no duplicarlas por turno)
+  if (cfg.customInstructions && cfg.customInstructions.trim()) {
+    const extra = 'Instrucciones personalizadas del usuario (respétalas siempre):\n' + cfg.customInstructions.trim();
+    const idx = msgs.findIndex(m => m.role === 'system');
+    if (idx >= 0) msgs[idx] = { role: 'system', content: msgs[idx].content + '\n\n' + extra };
+    else msgs.unshift({ role: 'system', content: extra });
+  }
   if (agentMode) {
     try { await mcp.sync(cfg); } catch { /* los conectores no deben tumbar el chat */ }
   }
@@ -550,45 +629,58 @@ async function handleGateway(req, res, url) {
     if (!providers.REGISTRY[providerId] || !model) {
       return json(res, 400, { error: { message: 'Usa model con formato "proveedor:modelo", p.ej. "ollama:llama3.1"' } });
     }
+    // Herramientas (function calling): del formato OpenAI al neutro interno
+    const tools = Array.isArray(body.tools) && body.tools.length
+      ? body.tools
+          .filter(t => t.type === 'function' && t.function)
+          .map(t => ({ name: t.function.name, description: t.function.description || '', parameters: t.function.parameters || { type: 'object', properties: {} } }))
+      : null;
+
     const stream = providers.chatStream({
       providerId, model,
       messages: media.resolveMessages(body.messages || []),
-      tools: null,
+      tools,
       temperature: body.temperature ?? cfg.temperature,
       cfg
     });
 
+    const toOpenAiCalls = calls => calls.map((c, i) => ({
+      index: i, id: c.id, type: 'function',
+      function: { name: c.name, arguments: JSON.stringify(c.args) }
+    }));
+
     if (body.stream) {
       sseStart(res);
       const chunkId = 'chatcmpl-' + Date.now();
-      for await (const ev of stream) {
-        if (ev.type === 'text') {
-          sse(res, {
-            id: chunkId, object: 'chat.completion.chunk', model: body.model,
-            choices: [{ index: 0, delta: { content: ev.text }, finish_reason: null }]
-          });
-        } else if (ev.type === 'error') {
-          sse(res, { error: { message: ev.message } });
-        }
-      }
-      sse(res, {
+      const chunk = (delta, finish = null) => sse(res, {
         id: chunkId, object: 'chat.completion.chunk', model: body.model,
-        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }]
+        choices: [{ index: 0, delta, finish_reason: finish }]
       });
+      let finish = 'stop';
+      for await (const ev of stream) {
+        if (ev.type === 'text') chunk({ content: ev.text });
+        else if (ev.type === 'tool_calls') { chunk({ tool_calls: toOpenAiCalls(ev.calls) }); finish = 'tool_calls'; }
+        else if (ev.type === 'error') sse(res, { error: { message: ev.message } });
+      }
+      chunk({}, finish);
       res.write('data: [DONE]\n\n');
       return res.end();
     }
 
     let text = '';
+    let calls = null;
     let error = null;
     for await (const ev of stream) {
       if (ev.type === 'text') text += ev.text;
+      else if (ev.type === 'tool_calls') calls = ev.calls;
       else if (ev.type === 'error') error = ev.message;
     }
     if (error) return json(res, 502, { error: { message: error } });
+    const message = { role: 'assistant', content: text || (calls ? null : '') };
+    if (calls) message.tool_calls = toOpenAiCalls(calls);
     return json(res, 200, {
       id: 'chatcmpl-' + Date.now(), object: 'chat.completion', model: body.model,
-      choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }]
+      choices: [{ index: 0, message, finish_reason: calls ? 'tool_calls' : 'stop' }]
     });
   }
 

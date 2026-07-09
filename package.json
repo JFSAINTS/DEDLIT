@@ -1,6 +1,6 @@
 {
   "name": "dedlit-studio",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Frontend local y privado para trabajar con modelos de IA locales (Ollama, LM Studio) y en la nube (Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, GLM), con modo agente estilo Claude Code y soporte multimodal.",
   "main": "server.js",
   "bin": "server.js",
@@ -8,7 +8,8 @@
     "start": "node server.js",
     "build:exe": "pkg . --targets node22-win-x64",
     "build:macos": "pkg . --targets node22-macos-x64,node22-macos-arm64 --no-bytecode --public",
-    "build:all": "npm run build:exe && npm run build:macos"
+    "build:linux": "pkg . --targets node22-linux-x64 --no-bytecode --public",
+    "build:all": "npm run build:exe && npm run build:macos && npm run build:linux"
   },
   "pkg": {
     "assets": [

@@ -10,6 +10,7 @@ Frontend **local y privado** para trabajar con modelos de IA — locales y en la
 
 - **Windows**: `dedlit-studio-win-x64.exe` — doble clic y listo.
 - **macOS (Apple Silicon)**: `DEDLIT-Studio-arm64.dmg` — abre el DMG, arrastra **DEDLIT Studio** a Aplicaciones y lánzala (arranca el servidor y abre el navegador; para pararlo, sal de la app desde el Dock). La primera vez, si Gatekeeper se queja: clic derecho → *Abrir*, o `xattr -dr com.apple.quarantine "/Applications/DEDLIT Studio.app"`.
+- **Linux**: `dedlit-studio-linux-x64` — `chmod +x` y ejecutar.
 - **macOS (binario suelto)**: `dedlit-studio-macos-arm64` (Apple Silicon) o `dedlit-studio-macos-x64` (Intel), para lanzarlo desde Terminal:
 
   ```bash
@@ -72,7 +73,8 @@ El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nive
 ## API keys y privacidad
 
 - Las keys se guardan **cifradas con AES-256-GCM** en `%USERPROFILE%\.dedlit\config.json` (la clave de cifrado en `secret.key`, misma carpeta). Nunca se envían al navegador ni a ningún sitio salvo al proveedor correspondiente.
-- Las conversaciones se guardan en el `localStorage` del navegador — nunca salen de tu equipo.
+- Las conversaciones se guardan **en tu disco** (`%USERPROFILE%\.dedlit\chats`) — se comparten entre navegadores, sobreviven a limpiezas y nunca salen de tu equipo. Puedes **buscar** en todo el historial desde la barra lateral y **exportar** cualquier chat a Markdown o JSON desde la barra superior, donde también puedes **↻ regenerar** la última respuesta.
+- En Ajustes puedes definir **instrucciones personalizadas** (p. ej. "responde siempre en español, sé conciso") que se aplican a todas tus conversaciones.
 - Con modelos locales (Ollama / LM Studio), **ningún dato sale de tu máquina**.
 
 ## Modo agente
@@ -123,7 +125,7 @@ Según las capacidades del modelo cargado (se muestran como chips bajo el select
 
 **Generación** — selector de modo junto al campo de texto:
 
-- 🖼️ **Generar imagen**: `gpt-image-1` / `dall-e-3` (OpenAI), `grok-2-image` (xAI), `cogview-4` (Zhipu) o cualquier endpoint `/images/generations` compatible.
+- 🖼️ **Generar imagen**: si tienes **Stable Diffusion local** (Automatic1111/SD.Next/Forge arrancado con `--api`; URL en Ajustes) se usa automáticamente — gratis y 100% privado. Si no, `gpt-image-1`/`dall-e-3` (OpenAI), `grok-2-image` (xAI) o `cogview-4` (Zhipu) con key.
 - 🔊 **Generar voz (TTS)**: `tts-1`, `gpt-4o-mini-tts`… (campo de voz configurable: alloy, echo, nova…).
 - 📝 **Transcribir audio**: adjunta un audio y usa `whisper-1` / `gpt-4o-transcribe`.
 
@@ -175,12 +177,16 @@ El runtime sigue siendo cero-dependencias; `@yao-pkg/pkg` es solo `devDependency
 
 ## Hoja de ruta
 
-- [ ] Historial de chats en disco (ahora vive en localStorage del navegador)
-- [ ] Búsqueda en conversaciones y exportación (Markdown/JSON)
+- [x] Historial de chats en disco (`~/.dedlit/chats`, con migración automática desde localStorage — v0.6.0)
+- [x] Búsqueda en conversaciones y exportación Markdown/JSON (v0.6.0)
 - [x] Herramienta de búsqueda de archivos para el agente (`search_files`, v0.3.0)
-- [ ] Soporte de herramientas (function calling) en el gateway /v1
+- [x] Soporte de herramientas (function calling) en el gateway /v1 (v0.6.0)
 - [x] MCP (Model Context Protocol) como fuente de herramientas del agente (v0.3.0, autoextensible desde v0.4.0)
-- [ ] Generación de imágenes con Stable Diffusion local (Automatic1111/ComfyUI)
-- [ ] Empaquetado para Linux (`pkg` ya lo permite añadiendo `node22-linux-x64` a los targets)
+- [x] Generación de imágenes con Stable Diffusion local (Automatic1111/SD.Next/Forge — v0.6.0)
+- [x] Empaquetado para Linux (v0.6.0)
+- [ ] Voz 100% local: transcripción con whisper.cpp y TTS con Piper
+- [ ] RAG local: chatear con tus documentos (indexado de carpetas/PDFs)
+- [ ] Editar mensajes anteriores del usuario (regenerar ya existe)
+- [ ] Soporte de ComfyUI como backend adicional de imágenes
 
 Las contribuciones son bienvenidas. Lee `CLAUDE.md` para entender la arquitectura y los principios del proyecto (privacidad primero, cero dependencias en runtime).

@@ -69,6 +69,33 @@ jobs:
           gh release create "$env:GITHUB_REF_NAME" --title "$env:GITHUB_REF_NAME" --generate-notes 2>$null; if (-not $?) { "release ya existe" }
           gh release upload "$env:GITHUB_REF_NAME" dist/dedlit-studio-win-x64.exe --clobber
 
+  exe-linux:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      # En el runner nativo de Linux el bytecode sí funciona
+      - run: npx pkg . --targets node22-linux-x64
+      - run: mv dist/dedlit-studio dist/dedlit-studio-linux-x64
+      - uses: actions/upload-artifact@v4
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        continue-on-error: true
+        with:
+          name: dedlit-studio-linux-x64
+          path: dist/dedlit-studio-linux-x64
+          retention-days: 1
+      - name: Publicar en release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes 2>/dev/null || echo "release ya existe"
+          gh release upload "$GITHUB_REF_NAME" dist/dedlit-studio-linux-x64 --clobber
+
   exe-macos:
     # En macOS pkg firma (ad-hoc) los binarios automáticamente,
     # imprescindible para Apple Silicon

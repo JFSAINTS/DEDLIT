@@ -5,8 +5,8 @@ const $ = id => document.getElementById(id);
 
 const state = {
   config: null,
-  chats: JSON.parse(localStorage.getItem('dedlit.chats') || '[]'),
-  currentChat: null,
+  chatIndex: [],     // metadatos [{id, title, updatedAt, count}] — el contenido vive en disco
+  currentChat: null, // chat completo abierto
   streaming: false,
   abortController: null,
   attachments: [] // {ref, url, kind: 'image'|'audio'|'video', name, format}
@@ -167,45 +167,101 @@ function buildUserContent(text) {
   return parts;
 }
 
-// ---------- Persistencia de chats ----------
+// ---------- Persistencia de chats (en disco, vía servidor) ----------
 
+async function loadChatIndex() {
+  try {
+    state.chatIndex = (await (await fetch('/api/chats')).json()).chats || [];
+  } catch {
+    state.chatIndex = [];
+  }
+}
+
+// Migración única desde localStorage (versiones anteriores)
+async function migrateLocalChats() {
+  let old = [];
+  try { old = JSON.parse(localStorage.getItem('dedlit.chats') || '[]'); } catch { return; }
+  if (!old.length) return;
+  for (const chat of old) {
+    if (chat.messages && chat.messages.length) {
+      await fetch('/api/chats', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat })
+      }).catch(() => {});
+    }
+  }
+  localStorage.removeItem('dedlit.chats');
+}
+
+// Guarda el chat actual en disco y actualiza el índice local
 function saveChats() {
-  if (state.chats.length > 50) state.chats = state.chats.slice(-50);
-  localStorage.setItem('dedlit.chats', JSON.stringify(state.chats));
+  const chat = state.currentChat;
+  if (!chat || !chat.messages.length) return;
+  chat.updatedAt = Date.now();
+  fetch('/api/chats', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat })
+  }).catch(() => {});
+  const meta = { id: chat.id, title: chat.title, updatedAt: chat.updatedAt, count: chat.messages.length };
+  const i = state.chatIndex.findIndex(c => c.id === chat.id);
+  if (i >= 0) state.chatIndex[i] = meta;
+  else state.chatIndex.unshift(meta);
 }
 
 function newChat() {
-  const chat = { id: Date.now().toString(36), title: 'Nueva conversación', messages: [], createdAt: Date.now() };
-  state.chats.push(chat);
-  state.currentChat = chat;
-  saveChats();
+  state.currentChat = { id: Date.now().toString(36), title: 'Nueva conversación', messages: [], createdAt: Date.now() };
   renderChatList();
   renderMessages();
 }
 
-function renderChatList() {
+async function openChat(id) {
+  try {
+    const chat = await (await fetch('/api/chats/' + encodeURIComponent(id))).json();
+    if (chat.error) throw new Error(chat.error);
+    state.currentChat = chat;
+  } catch (err) {
+    errorCard('No se pudo abrir la conversación: ' + err.message);
+  }
+  renderChatList();
+  renderMessages();
+}
+
+async function deleteChat(id) {
+  await fetch('/api/chats/' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {});
+  state.chatIndex = state.chatIndex.filter(c => c.id !== id);
+  if (state.currentChat?.id === id) state.currentChat = null;
+  renderChatList();
+  renderMessages();
+}
+
+// items: opcional, resultados de búsqueda [{id,title,snippet}]
+function renderChatList(items) {
   const list = $('chat-list');
   list.innerHTML = '';
-  [...state.chats].reverse().forEach(chat => {
+  let metas = items || [...state.chatIndex].sort((a, b) => b.updatedAt - a.updatedAt);
+  // el chat recién creado (sin guardar aún) se muestra arriba
+  if (!items && state.currentChat && !metas.some(c => c.id === state.currentChat.id)) {
+    metas = [{ id: state.currentChat.id, title: state.currentChat.title }, ...metas];
+  }
+  for (const meta of metas) {
     const el = document.createElement('div');
-    el.className = 'chat-item' + (chat === state.currentChat ? ' active' : '');
+    el.className = 'chat-item' + (meta.id === state.currentChat?.id ? ' active' : '');
     const title = document.createElement('span');
     title.className = 'title';
-    title.textContent = chat.title;
+    title.innerHTML = escapeHtml(meta.title) +
+      (meta.snippet ? `<span class="snippet">${escapeHtml(meta.snippet)}</span>` : '');
     const del = document.createElement('span');
     del.className = 'del';
     del.textContent = '✕';
     del.title = 'Eliminar conversación';
-    del.onclick = e => {
-      e.stopPropagation();
-      state.chats = state.chats.filter(c => c !== chat);
-      if (state.currentChat === chat) state.currentChat = state.chats[state.chats.length - 1] || null;
-      saveChats(); renderChatList(); renderMessages();
-    };
+    del.onclick = e => { e.stopPropagation(); deleteChat(meta.id); };
     el.append(title, del);
-    el.onclick = () => { state.currentChat = chat; renderChatList(); renderMessages(); };
+    el.onclick = () => {
+      if (meta.id === state.currentChat?.id) return;
+      openChat(meta.id);
+    };
     list.appendChild(el);
-  });
+  }
 }
 
 // ---------- Renderizado de mensajes ----------
@@ -216,9 +272,20 @@ function msgEl(role, html, label) {
   div.innerHTML = `
     <div class="avatar">${role === 'user' ? '👤' : '🤖'}</div>
     <div style="flex:1;min-width:0">
-      <div class="role-name">${label || (role === 'user' ? 'Tú' : modelLabel())}</div>
+      <div class="role-name">${label || (role === 'user' ? 'Tú' : modelLabel())}
+        ${role === 'assistant' ? '<button class="copy-btn" title="Copiar texto">📋</button>' : ''}
+      </div>
       <div class="bubble">${html}</div>
     </div>`;
+  const copyBtn = div.querySelector('.copy-btn');
+  if (copyBtn) {
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(div.querySelector('.bubble').innerText).then(() => {
+        copyBtn.textContent = '✓';
+        setTimeout(() => { copyBtn.textContent = '📋'; }, 1200);
+      });
+    };
+  }
   return div;
 }
 
@@ -249,6 +316,7 @@ function renderMessages() {
   cont.innerHTML = '';
   if (!state.currentChat || !state.currentChat.messages.length) {
     cont.innerHTML = WELCOME_HTML;
+    updateToolbar();
     return;
   }
   for (const m of state.currentChat.messages) {
@@ -277,6 +345,18 @@ function renderMessages() {
     }
   }
   cont.scrollTop = cont.scrollHeight;
+  updateToolbar();
+}
+
+function updateToolbar() {
+  const chat = state.currentChat;
+  const has = !!(chat && chat.messages.length);
+  $('chat-toolbar').classList.toggle('hidden', !has);
+  if (!has) return;
+  $('chat-title').textContent = chat.title;
+  $('btn-export-md').href = '/api/chats/' + encodeURIComponent(chat.id) + '/export?format=md';
+  $('btn-export-json').href = '/api/chats/' + encodeURIComponent(chat.id) + '/export?format=json';
+  $('btn-regenerate').style.display = chat.messages.some(m => m.role === 'assistant') ? '' : 'none';
 }
 
 // ---------- Envío ----------
@@ -324,6 +404,28 @@ async function sendMessage() {
   fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ lastProvider: provider, lastModel: model }) }).catch(() => {});
 
+  await runTurn(chat);
+}
+
+// Regenera la última respuesta: recorta el historial hasta el último mensaje
+// del usuario y vuelve a lanzar el turno
+async function regenerateLast() {
+  const chat = state.currentChat;
+  if (!chat || state.streaming) return;
+  let lastUser = -1;
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    if (chat.messages[i].role === 'user') { lastUser = i; break; }
+  }
+  if (lastUser < 0) return;
+  chat.messages = chat.messages.slice(0, lastUser + 1);
+  saveChats(); renderChatList(); renderMessages();
+  await runTurn(chat);
+}
+
+// Ejecuta un turno del modelo (streaming SSE) sobre el historial del chat
+async function runTurn(chat) {
+  const provider = $('sel-provider').value;
+  const model = currentModel();
   setStreaming(true);
   const cont = $('messages');
   let liveBubble = null;
@@ -446,6 +548,8 @@ async function sendMessage() {
     if (liveBubble) liveBubble.classList.remove('typing');
     setStreaming(false);
     state.abortController = null;
+    renderChatList();
+    updateToolbar();
   }
 }
 
@@ -576,8 +680,9 @@ async function loadModels(preselect) {
 async function refreshLocalStatus() {
   try {
     const st = await (await fetch('/api/status')).json();
-    for (const id of ['ollama', 'lmstudio']) {
+    for (const id of ['ollama', 'lmstudio', 'sd']) {
       const dot = $('dot-' + id), detail = $('detail-' + id);
+      if (!dot || !st[id]) continue;
       dot.className = 'dot ' + (st[id].online ? 'on' : 'off');
       detail.textContent = st[id].online ? (st[id].models?.length || 0) + ' modelos' : 'apagado';
     }
@@ -613,6 +718,8 @@ function openSettings() {
   $('cfg-workspace').value = c.workspace;
   $('cfg-lmdir').value = c.lmstudioModelsDir || '';
   $('cfg-lmdir').placeholder = c.lmstudioModelsDirDefault || '~/.lmstudio/models';
+  $('cfg-sdurl').value = c.sdWebuiUrl || '';
+  $('cfg-instructions').value = c.customInstructions || '';
   $('cfg-auto-read').checked = c.autoApprove.read;
   $('cfg-auto-write').checked = c.autoApprove.write;
   $('cfg-auto-command').checked = c.autoApprove.command;
@@ -672,6 +779,8 @@ async function saveSettings() {
       body: JSON.stringify({
         workspace: $('cfg-workspace').value.trim(),
         lmstudioModelsDir: $('cfg-lmdir').value.trim(),
+        sdWebuiUrl: $('cfg-sdurl').value.trim(),
+        customInstructions: $('cfg-instructions').value,
         autoApprove: {
           read: $('cfg-auto-read').checked,
           write: $('cfg-auto-write').checked,
@@ -872,6 +981,21 @@ function openFreeApis() {
 $('btn-new-chat').onclick = newChat;
 $('btn-send').onclick = sendMessage;
 $('btn-stop').onclick = () => state.abortController?.abort();
+$('btn-regenerate').onclick = regenerateLast;
+
+// Búsqueda en el historial (server-side, con retardo al teclear)
+let chatSearchTimer;
+$('inp-chat-search').addEventListener('input', () => {
+  clearTimeout(chatSearchTimer);
+  chatSearchTimer = setTimeout(async () => {
+    const q = $('inp-chat-search').value.trim();
+    if (!q) return renderChatList();
+    try {
+      const r = await (await fetch('/api/chats/search?q=' + encodeURIComponent(q))).json();
+      renderChatList(r.results || []);
+    } catch { /* servidor ocupado */ }
+  }, 300);
+});
 $('sel-provider').onchange = () => loadModels();
 $('sel-model').onchange = updateCaps;
 $('inp-model-manual').oninput = updateCaps;
@@ -916,7 +1040,7 @@ $('sel-mode').onchange = () => {
   $('inp-voice').classList.toggle('hidden', mode !== 'tts');
   $('inp-message').placeholder = {
     chat: 'Escribe tu mensaje… (Enter para enviar, Shift+Enter para salto de línea)',
-    image: 'Describe la imagen a generar… (modelo: gpt-image-1, dall-e-3, grok-2-image, cogview-4…)',
+    image: 'Describe la imagen a generar… (Stable Diffusion local si está activo, o gpt-image-1 / grok-2-image / cogview con key)',
     tts: 'Texto a convertir en voz… (modelo: tts-1, gpt-4o-mini-tts…)',
     stt: 'Adjunta un audio con 📎 y pulsa enviar (modelo: whisper-1, gpt-4o-transcribe…)'
   }[mode];
@@ -949,7 +1073,12 @@ mainEl.addEventListener('drop', e => {
   await loadConfig();
   refreshLocalStatus();
   setInterval(refreshLocalStatus, 15000);
-  if (state.chats.length) state.currentChat = state.chats[state.chats.length - 1];
-  renderChatList();
-  renderMessages();
+  await migrateLocalChats(); // una sola vez: pasa los chats antiguos del navegador a disco
+  await loadChatIndex();
+  if (state.chatIndex.length) {
+    await openChat(state.chatIndex[0].id);
+  } else {
+    renderChatList();
+    renderMessages();
+  }
 })();
