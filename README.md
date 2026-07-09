@@ -64,6 +64,16 @@ El botón **🧲 Modelos** abre un buscador de **Hugging Face** integrado (model
 
 Los GGUF multiparte se evalúan por su **tamaño total**, no por archivo. Cada cuantización tiene descarga directa: **⬇ LM Studio** (a la carpeta de modelos, configurable en Ajustes, con estructura `editor/modelo/` que LM Studio indexa solo) u **⬇ Ollama** (`ollama pull hf.co/repo:CUANT`, que gestiona también los multiparte). La búsqueda consulta huggingface.co únicamente cuando tú la lanzas.
 
+## Chatear con tus documentos (📚 RAG local)
+
+Con el botón **🛠** de la sección *📚 Documentos* indexas cualquier carpeta: texto, código, Markdown, **PDF** y **DOCX** (extractores propios, sin dependencias). Los embeddings se calculan con el proveedor que elijas — recomendado **local** (LM Studio u Ollama con un modelo como `nomic-embed-text`), de modo que tus documentos nunca salen de tu equipo. El índice vive en `~/.dedlit/rag`.
+
+Después, elige la colección en el selector de la barra lateral y el modelo responderá usando los fragmentos más afines como contexto, **citando el archivo**. El agente además tiene la herramienta `search_docs` para consultar tus colecciones cuando lo necesite.
+
+## Voz local (opcional)
+
+En Ajustes puedes configurar servidores locales OpenAI-compatibles para **📝 transcripción** (whisper.cpp `server`, faster-whisper-server) y **🔊 texto a voz** (kokoro-fastapi, openedai-speech). Si están configurados tienen prioridad sobre la nube: voz completamente privada y gratuita.
+
 ## ¿Sin API key? — APIs gratuitas
 
 El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nivel gratuito (basado en [cheahjs/free-llm-api-resources](https://github.com/cheahjs/free-llm-api-resources)): qué ofrece cada uno, enlace directo para crear la key y acceso rápido a Ajustes para pegarla. Todos vienen preconfigurados como proveedores, sin tocar URLs.
@@ -184,9 +194,9 @@ El runtime sigue siendo cero-dependencias; `@yao-pkg/pkg` es solo `devDependency
 - [x] MCP (Model Context Protocol) como fuente de herramientas del agente (v0.3.0, autoextensible desde v0.4.0)
 - [x] Generación de imágenes con Stable Diffusion local (Automatic1111/SD.Next/Forge — v0.6.0)
 - [x] Empaquetado para Linux (v0.6.0)
-- [ ] Voz 100% local: transcripción con whisper.cpp y TTS con Piper
-- [ ] RAG local: chatear con tus documentos (indexado de carpetas/PDFs)
-- [ ] Editar mensajes anteriores del usuario (regenerar ya existe)
-- [ ] Soporte de ComfyUI como backend adicional de imágenes
+- [x] Voz local: endpoints OpenAI-compatibles configurables para STT (whisper.cpp server, faster-whisper) y TTS (kokoro, openedai-speech) con prioridad sobre la nube (v0.7.0)
+- [x] RAG local: chatear con tus documentos — carpetas, PDF y DOCX (v0.7.0)
+- [x] Editar mensajes anteriores del usuario (v0.7.0)
+- [x] ComfyUI como backend adicional de imágenes (v0.7.0)
 
 Las contribuciones son bienvenidas. Lee `CLAUDE.md` para entender la arquitectura y los principios del proyecto (privacidad primero, cero dependencias en runtime).

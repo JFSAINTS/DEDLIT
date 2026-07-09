@@ -32,11 +32,19 @@
         </div>
       </div>
 
+      <div class="sidebar-section">
+        <label>📚 Documentos (RAG) <button id="btn-docs" class="mini" title="Indexar carpetas de documentos para chatear con ellos">🛠</button></label>
+        <select id="sel-rag" title="Si eliges una colección, el modelo responde usando tus documentos como contexto">
+          <option value="">(sin contexto documental)</option>
+        </select>
+      </div>
+
       <div class="sidebar-section" id="local-status">
         <label>Servidores locales</label>
         <div class="status-row"><span class="dot" id="dot-ollama"></span> Ollama <span class="status-detail" id="detail-ollama"></span></div>
         <div class="status-row"><span class="dot" id="dot-lmstudio"></span> LM Studio <span class="status-detail" id="detail-lmstudio"></span></div>
         <div class="status-row" title="Automatic1111/SD.Next/Forge con --api: generación de imágenes local y gratuita"><span class="dot" id="dot-sd"></span> Stable Diffusion <span class="status-detail" id="detail-sd"></span></div>
+        <div class="status-row" title="ComfyUI: backend alternativo de imágenes local"><span class="dot" id="dot-comfy"></span> ComfyUI <span class="status-detail" id="detail-comfy"></span></div>
       </div>
 
       <div class="sidebar-section grow">
@@ -99,6 +107,29 @@
     </main>
   </div>
 
+  <!-- Modal de documentos (RAG) -->
+  <div id="docs-overlay" class="hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>📚 Documentos (RAG local)</h2>
+        <button id="btn-close-docs">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint">Indexa una carpeta (texto, código, Markdown, <b>PDF</b> y <b>DOCX</b>) para que el modelo responda usando tus documentos como contexto, citando el archivo. Los embeddings se calculan con el proveedor que elijas — recomendado <b>local</b> (LM Studio u Ollama con un modelo de embeddings como <code>nomic-embed-text</code>): así nada sale de tu equipo. El índice se guarda en tu disco.</p>
+        <div id="docs-list"></div>
+        <h3>Nueva colección</h3>
+        <input type="text" id="docs-name" placeholder="Nombre (p. ej. Manuales)">
+        <input type="text" id="docs-folder" placeholder="Carpeta a indexar (p. ej. C:\Users\tú\Documentos\proyectos)">
+        <div style="display:flex;gap:8px">
+          <select id="docs-provider" title="Proveedor de embeddings" style="flex:1"></select>
+          <input type="text" id="docs-model" placeholder="modelo de embeddings" style="flex:1.4">
+        </div>
+        <button id="btn-docs-index" class="primary" style="align-self:flex-start">Indexar carpeta</button>
+        <div id="docs-progress" class="hint"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal del buscador de modelos -->
   <div id="hub-overlay" class="hidden">
     <div class="modal-box wide">
@@ -153,6 +184,15 @@
         <h3>Stable Diffusion local</h3>
         <input type="text" id="cfg-sdurl" placeholder="http://127.0.0.1:7860">
         <p class="hint">URL de Automatic1111 / SD.Next / Forge (arráncalo con <code>--api</code>). Si está activo, la generación de imágenes lo usa automáticamente: gratis y 100% privada.</p>
+
+        <h3>ComfyUI local</h3>
+        <input type="text" id="cfg-comfy" placeholder="http://127.0.0.1:8188">
+        <p class="hint">Backend alternativo de imágenes. Prioridad automática: SD WebUI → ComfyUI → nube.</p>
+
+        <h3>Voz local (opcional)</h3>
+        <input type="text" id="cfg-stt" placeholder="URL de transcripción, p. ej. http://127.0.0.1:8080/v1 (whisper.cpp server, faster-whisper)">
+        <input type="text" id="cfg-tts" placeholder="URL de texto-a-voz, p. ej. http://127.0.0.1:8880/v1 (kokoro-fastapi, openedai-speech)">
+        <p class="hint">Servidores locales OpenAI-compatibles para 📝 transcribir y 🔊 generar voz <b>sin nube</b>. Si se rellenan, tienen prioridad sobre el proveedor seleccionado.</p>
 
         <h3>Instrucciones personalizadas</h3>
         <textarea id="cfg-instructions" rows="3" placeholder="P. ej.: Responde siempre en español. Sé conciso. Cuando escribas código, coméntalo."></textarea>

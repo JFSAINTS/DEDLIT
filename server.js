@@ -14,6 +14,7 @@ const media = require('./lib/media');
 const mcp = require('./lib/mcp');
 const system = require('./lib/system');
 const chats = require('./lib/chats');
+const rag = require('./lib/rag');
 
 const PORT = Number(process.env.DEDLIT_PORT || 8642);
 const PUBLIC = path.join(__dirname, 'public');
@@ -80,6 +81,9 @@ async function handleApi(req, res, url) {
       lmstudioModelsDir: cfg.lmstudioModelsDir || '',
       lmstudioModelsDirDefault: path.join(require('os').homedir(), '.lmstudio', 'models'),
       sdWebuiUrl: cfg.sdWebuiUrl || 'http://127.0.0.1:7860',
+      comfyUrl: cfg.comfyUrl || 'http://127.0.0.1:8188',
+      sttUrl: cfg.sttUrl || '',
+      ttsUrl: cfg.ttsUrl || '',
       customInstructions: cfg.customInstructions || '',
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
@@ -113,6 +117,9 @@ async function handleApi(req, res, url) {
     }
     if (typeof body.lmstudioModelsDir === 'string') cfg.lmstudioModelsDir = body.lmstudioModelsDir.trim();
     if (typeof body.sdWebuiUrl === 'string') cfg.sdWebuiUrl = body.sdWebuiUrl.trim() || 'http://127.0.0.1:7860';
+    if (typeof body.comfyUrl === 'string') cfg.comfyUrl = body.comfyUrl.trim() || 'http://127.0.0.1:8188';
+    if (typeof body.sttUrl === 'string') cfg.sttUrl = body.sttUrl.trim();
+    if (typeof body.ttsUrl === 'string') cfg.ttsUrl = body.ttsUrl.trim();
     if (typeof body.customInstructions === 'string') cfg.customInstructions = body.customInstructions;
     configLib.save(cfg);
     return json(res, 200, { ok: true });
@@ -160,6 +167,43 @@ async function handleApi(req, res, url) {
     }
     if (m && req.method === 'DELETE') {
       chats.remove(m[1]);
+      return json(res, 200, { ok: true });
+    }
+  }
+
+  // ----- RAG: colecciones de documentos locales -----
+  if (url.pathname === '/api/rag' && req.method === 'GET') {
+    return json(res, 200, { collections: rag.list() });
+  }
+  if (url.pathname === '/api/rag/index' && req.method === 'POST') {
+    const { name, folder, provider, model } = await readBody(req);
+    if (!name || !folder || !provider || !model) {
+      return json(res, 400, { error: 'Faltan name, folder, provider o model' });
+    }
+    sseStart(res);
+    try {
+      const result = await rag.buildIndex({
+        id: Date.now().toString(36), name, folder, provider, model, cfg,
+        onProgress: (done, total) => sse(res, { type: 'progress', done, total })
+      });
+      sse(res, { type: 'done', ...result });
+    } catch (err) {
+      sse(res, { type: 'error', message: err.message });
+    }
+    return res.end();
+  }
+  if (url.pathname === '/api/rag/search' && req.method === 'GET') {
+    try {
+      const results = await rag.search(url.searchParams.get('id'), url.searchParams.get('q') || '', cfg, 5);
+      return json(res, 200, { results });
+    } catch (err) {
+      return json(res, 502, { error: err.message });
+    }
+  }
+  {
+    const m = url.pathname.match(/^\/api\/rag\/([\w-]+)$/);
+    if (m && req.method === 'DELETE') {
+      rag.remove(m[1]);
       return json(res, 200, { ok: true });
     }
   }
@@ -264,12 +308,13 @@ async function handleApi(req, res, url) {
 
   // Estado de servidores locales (Ollama / LM Studio / Stable Diffusion)
   if (url.pathname === '/api/status' && req.method === 'GET') {
-    const [ollama, lmstudio, sd] = await Promise.all([
+    const [ollama, lmstudio, sd, comfy] = await Promise.all([
       providers.checkLocal('ollama', cfg),
       providers.checkLocal('lmstudio', cfg),
-      providers.sdCheck(cfg)
+      providers.sdCheck(cfg),
+      providers.comfyCheck(cfg)
     ]);
-    return json(res, 200, { ollama, lmstudio, sd });
+    return json(res, 200, { ollama, lmstudio, sd, comfy });
   }
 
   // Aprobación de una herramienta del agente
@@ -322,23 +367,49 @@ async function handleApi(req, res, url) {
     }
   }
 
-  // Texto a voz (OpenAI tts-1 / gpt-4o-mini-tts, etc.)
+  // Texto a voz. Prioridad: servidor TTS local OpenAI-compatible (config
+  // ttsUrl: kokoro, openedai-speech…) → proveedor en la nube
   if (url.pathname === '/api/generate/speech' && req.method === 'POST') {
     const { provider, model, input, voice } = await readBody(req);
     try {
-      const buf = await providers.generateSpeech({ providerId: provider, model, input, voice, cfg });
-      return json(res, 200, media.saveBuffer(buf, '.mp3', 'tts'));
+      let buf;
+      let backend;
+      if (cfg.ttsUrl) {
+        const r = await fetch(cfg.ttsUrl.replace(/\/+$/, '') + '/audio/speech', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: model || 'tts-1', input, voice: voice || 'alloy', response_format: 'mp3' })
+        });
+        if (!r.ok) throw new Error('TTS local HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
+        buf = Buffer.from(await r.arrayBuffer());
+        backend = 'TTS local';
+      } else {
+        buf = await providers.generateSpeech({ providerId: provider, model, input, voice, cfg });
+        backend = provider;
+      }
+      return json(res, 200, { ...media.saveBuffer(buf, '.mp3', 'tts'), backend });
     } catch (err) {
       return json(res, 502, { error: err.message });
     }
   }
 
-  // Transcribir un audio adjunto (whisper-1, gpt-4o-transcribe, etc.)
+  // Transcripción. Prioridad: servidor local OpenAI-compatible (config
+  // sttUrl: whisper.cpp server, faster-whisper…) → proveedor en la nube
   if (url.pathname === '/api/transcribe' && req.method === 'POST') {
     const { provider, model, ref } = await readBody(req);
     try {
       const { buf, mime, file } = media.refData(ref);
-      const text = await providers.transcribe({ providerId: provider, model, buf, mime, name: file, cfg });
+      let text;
+      if (cfg.sttUrl) {
+        const fd = new FormData();
+        fd.append('file', new Blob([buf], { type: mime }), file);
+        fd.append('model', model || 'whisper-1');
+        const r = await fetch(cfg.sttUrl.replace(/\/+$/, '') + '/audio/transcriptions', { method: 'POST', body: fd });
+        if (!r.ok) throw new Error('STT local HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
+        const j = await r.json();
+        text = j.text ?? JSON.stringify(j);
+      } else {
+        text = await providers.transcribe({ providerId: provider, model, buf, mime, name: file, cfg });
+      }
       return json(res, 200, { text });
     } catch (err) {
       return json(res, 502, { error: err.message });
@@ -423,11 +494,14 @@ const IMAGE_CLOUD = [['openai', 'gpt-image-1'], ['xai', 'grok-2-image'], ['zhipu
 
 async function pickImageBackend(provider, model, cfg) {
   if (provider === 'sdwebui' || provider === 'sd') return { kind: 'sd' };
+  if (provider === 'comfyui' || provider === 'comfy') return { kind: 'comfy' };
   const cloud = IMAGE_CLOUD.find(c => c[0] === provider);
   if (cloud) return { kind: 'cloud', provider, model: model || cloud[1] };
-  // automático
+  // automático: local primero (SD WebUI → ComfyUI), luego nube con key
   const sd = await providers.sdCheck(cfg);
   if (sd.online) return { kind: 'sd' };
+  const comfy = await providers.comfyCheck(cfg);
+  if (comfy.online && comfy.models.length) return { kind: 'comfy' };
   for (const [p, m] of IMAGE_CLOUD) {
     if (cfg.keys[p]) return { kind: 'cloud', provider: p, model: m };
   }
@@ -438,8 +512,22 @@ async function generateImageBuffer(backend, prompt, cfg) {
   if (backend.kind === 'sd') {
     return { buf: await providers.sdGenerate({ prompt, cfg }), label: 'Stable Diffusion local' };
   }
+  if (backend.kind === 'comfy') {
+    return { buf: await providers.comfyGenerate({ prompt, cfg }), label: 'ComfyUI local' };
+  }
   const buf = await providers.generateImage({ providerId: backend.provider, model: backend.model, prompt, cfg });
   return { buf, label: backend.provider + ':' + backend.model };
+}
+
+// Herramienta search_docs del agente: busca en todas las colecciones RAG
+async function searchDocsTool(args, cfg) {
+  try {
+    const hits = await rag.searchAll(String(args.query || ''), cfg, Math.min(args.top_k || 5, 10));
+    if (!hits.length) return 'Sin resultados. Colecciones disponibles: ' + (rag.list().map(c => c.name).join(', ') || 'ninguna — el usuario no ha indexado documentos (botón 📚 Documentos).');
+    return hits.map(h => `【${h.file}】 (${h.collection}, similitud ${h.score})\n${h.text}`).join('\n\n---\n\n').slice(0, 30000);
+  } catch (err) {
+    return 'ERROR en la búsqueda documental: ' + err.message;
+  }
 }
 
 async function generateImageTool(args, cfg) {
@@ -482,6 +570,28 @@ async function chatHandler(req, res, body, cfg) {
     const idx = msgs.findIndex(m => m.role === 'system');
     if (idx >= 0) msgs[idx] = { role: 'system', content: msgs[idx].content + '\n\n' + extra };
     else msgs.unshift({ role: 'system', content: extra });
+  }
+  // Contexto documental (RAG): buscar en la colección elegida los fragmentos
+  // más afines a la última pregunta y dárselos al modelo como contexto
+  if (body.ragId) {
+    try {
+      const lastUser = [...msgs].reverse().find(m => m.role === 'user');
+      const q = typeof lastUser?.content === 'string'
+        ? lastUser.content
+        : (lastUser?.content || []).filter(p => p.type === 'text').map(p => p.text).join(' ');
+      if (q) {
+        const hits = await rag.search(body.ragId, q, cfg, 5);
+        if (hits.length) {
+          const ctx = hits.map(h => `【${h.file}】\n${h.text}`).join('\n\n---\n\n');
+          msgs.unshift({
+            role: 'system',
+            content: 'Contexto extraído de los documentos del usuario. Básate en él para responder y cita el archivo entre 【】 cuando lo uses; si el contexto no contiene la respuesta, dilo.\n\n' + ctx
+          });
+        }
+      }
+    } catch (err) {
+      sse(res, { type: 'error', message: 'RAG: ' + err.message });
+    }
   }
   if (agentMode) {
     try { await mcp.sync(cfg); } catch { /* los conectores no deben tumbar el chat */ }
@@ -557,6 +667,8 @@ async function chatHandler(req, res, body, cfg) {
           ? '[El usuario rechazó la ejecución de esta herramienta. Pregunta cómo proceder o intenta otra vía.]'
           : call.name === 'generate_image'
             ? await generateImageTool(call.args, cfg)
+            : call.name === 'search_docs'
+            ? await searchDocsTool(call.args, cfg)
             : mcp.isManagementTool(call.name)
               ? await mcp.manage(call.name, call.args, cfg)
               : mcp.isMcpTool(call.name)

@@ -319,9 +319,13 @@ function renderMessages() {
     updateToolbar();
     return;
   }
-  for (const m of state.currentChat.messages) {
-    if (m.role === 'system') continue;
-    if (m.role === 'user') cont.appendChild(msgEl('user', renderParts(m.content)));
+  state.currentChat.messages.forEach((m, idx) => {
+    if (m.role === 'system') return;
+    if (m.role === 'user') {
+      const el = msgEl('user', renderParts(m.content));
+      addEditButton(el, idx);
+      cont.appendChild(el);
+    }
     else if (m.role === 'assistant') {
       if (m.content && (!Array.isArray(m.content) || m.content.length)) {
         cont.appendChild(msgEl('assistant', renderParts(m.content), m.label));
@@ -343,9 +347,63 @@ function renderMessages() {
         card.appendChild(det);
       }
     }
-  }
+  });
   cont.scrollTop = cont.scrollHeight;
   updateToolbar();
+}
+
+// ---------- Edición de mensajes del usuario ----------
+
+function addEditButton(el, msgIndex) {
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.textContent = '✏';
+  btn.title = 'Editar y reenviar desde aquí';
+  el.querySelector('.role-name').appendChild(btn);
+  btn.onclick = () => startEditMessage(el, msgIndex);
+}
+
+function startEditMessage(el, idx) {
+  if (state.streaming) return;
+  const chat = state.currentChat;
+  const msg = chat.messages[idx];
+  const original = typeof msg.content === 'string'
+    ? msg.content
+    : (msg.content || []).filter(p => p.type === 'text').map(p => p.text).join('\n');
+  const bubble = el.querySelector('.bubble');
+  bubble.innerHTML = '';
+  const ta = document.createElement('textarea');
+  ta.value = original;
+  ta.rows = Math.min(8, Math.max(2, original.split('\n').length));
+  ta.style.width = '100%';
+  const btns = document.createElement('div');
+  btns.className = 'approval-buttons';
+  const save = document.createElement('button');
+  save.className = 'approve';
+  save.textContent = '✓ Guardar y reenviar';
+  const cancel = document.createElement('button');
+  cancel.className = 'reject';
+  cancel.textContent = 'Cancelar';
+  btns.append(save, cancel);
+  bubble.append(ta, btns);
+  ta.focus();
+  cancel.onclick = () => renderMessages();
+  save.onclick = async () => {
+    const nuevo = ta.value.trim();
+    if (!nuevo) return;
+    if (Array.isArray(msg.content)) {
+      // conservar los adjuntos, reemplazar solo el texto
+      const media = msg.content.filter(p => p.type !== 'text');
+      msg.content = [{ type: 'text', text: nuevo }, ...media];
+    } else {
+      msg.content = nuevo;
+    }
+    chat.messages = chat.messages.slice(0, idx + 1); // descartar lo posterior
+    saveChats();
+    renderChatList();
+    renderMessages();
+    await runTurn(chat);
+  };
 }
 
 function updateToolbar() {
@@ -448,7 +506,8 @@ async function runTurn(chat) {
       body: JSON.stringify({
         provider, model,
         messages: chat.messages,
-        agentMode: $('chk-agent').checked
+        agentMode: $('chk-agent').checked,
+        ragId: $('sel-rag').value || undefined
       }),
       signal: state.abortController.signal
     });
@@ -680,7 +739,7 @@ async function loadModels(preselect) {
 async function refreshLocalStatus() {
   try {
     const st = await (await fetch('/api/status')).json();
-    for (const id of ['ollama', 'lmstudio', 'sd']) {
+    for (const id of ['ollama', 'lmstudio', 'sd', 'comfy']) {
       const dot = $('dot-' + id), detail = $('detail-' + id);
       if (!dot || !st[id]) continue;
       dot.className = 'dot ' + (st[id].online ? 'on' : 'off');
@@ -719,6 +778,9 @@ function openSettings() {
   $('cfg-lmdir').value = c.lmstudioModelsDir || '';
   $('cfg-lmdir').placeholder = c.lmstudioModelsDirDefault || '~/.lmstudio/models';
   $('cfg-sdurl').value = c.sdWebuiUrl || '';
+  $('cfg-comfy').value = c.comfyUrl || '';
+  $('cfg-stt').value = c.sttUrl || '';
+  $('cfg-tts').value = c.ttsUrl || '';
   $('cfg-instructions').value = c.customInstructions || '';
   $('cfg-auto-read').checked = c.autoApprove.read;
   $('cfg-auto-write').checked = c.autoApprove.write;
@@ -780,6 +842,9 @@ async function saveSettings() {
         workspace: $('cfg-workspace').value.trim(),
         lmstudioModelsDir: $('cfg-lmdir').value.trim(),
         sdWebuiUrl: $('cfg-sdurl').value.trim(),
+        comfyUrl: $('cfg-comfy').value.trim(),
+        sttUrl: $('cfg-stt').value.trim(),
+        ttsUrl: $('cfg-tts').value.trim(),
         customInstructions: $('cfg-instructions').value,
         autoApprove: {
           read: $('cfg-auto-read').checked,
@@ -805,6 +870,111 @@ async function saveSettings() {
     btn.textContent = 'Guardar';
     btn.disabled = false;
     alert('No se pudo guardar la configuración: ' + err.message);
+  }
+}
+
+// ---------- Documentos (RAG local) ----------
+
+async function loadRagCollections() {
+  try {
+    const { collections } = await (await fetch('/api/rag')).json();
+    const sel = $('sel-rag');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">(sin contexto documental)</option>';
+    for (const c of collections || []) {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = '📚 ' + c.name + ' (' + c.chunks + ' fragmentos)';
+      sel.appendChild(opt);
+    }
+    if ([...sel.options].some(o => o.value === current)) sel.value = current;
+    return collections || [];
+  } catch {
+    return [];
+  }
+}
+
+async function openDocs() {
+  $('docs-overlay').classList.remove('hidden');
+  // proveedor de embeddings: locales primero
+  const sel = $('docs-provider');
+  sel.innerHTML = '';
+  for (const [id, p] of Object.entries(state.config.providers)) {
+    if (id === 'anthropic') continue; // sin endpoint de embeddings
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  }
+  if (!$('docs-model').value) $('docs-model').placeholder = 'p. ej. text-embedding-nomic-embed-text-v1.5';
+  renderDocsList(await loadRagCollections());
+}
+
+function renderDocsList(collections) {
+  const cont = $('docs-list');
+  if (!collections.length) {
+    cont.innerHTML = '<p class="hint">Aún no hay colecciones indexadas.</p>';
+    return;
+  }
+  cont.innerHTML = '';
+  for (const c of collections) {
+    const div = document.createElement('div');
+    div.className = 'provider-cfg';
+    div.innerHTML = `
+      <div class="pname">📚 ${escapeHtml(c.name)}
+        <span class="badge local">${c.chunks} fragmentos · ${c.files} archivos</span>
+        <span class="key-link" style="margin-left:auto"><a href="#" data-del="${c.id}">eliminar</a></span>
+      </div>
+      <p class="hint">${escapeHtml(c.folder)} — embeddings: ${escapeHtml(c.provider)}:${escapeHtml(c.model)}</p>`;
+    div.querySelector('[data-del]').onclick = async e => {
+      e.preventDefault();
+      await fetch('/api/rag/' + c.id, { method: 'DELETE' });
+      renderDocsList(await loadRagCollections());
+    };
+    cont.appendChild(div);
+  }
+}
+
+async function indexDocs() {
+  const name = $('docs-name').value.trim();
+  const folder = $('docs-folder').value.trim();
+  const provider = $('docs-provider').value;
+  const model = $('docs-model').value.trim();
+  const prog = $('docs-progress');
+  if (!name || !folder || !model) { alert('Rellena nombre, carpeta y modelo de embeddings.'); return; }
+  const btn = $('btn-docs-index');
+  btn.disabled = true;
+  prog.textContent = 'Escaneando y extrayendo texto…';
+  try {
+    const res = await fetch('/api/rag/index', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, folder, provider, model })
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, i).split('\n').find(l => l.startsWith('data: '));
+        buf = buf.slice(i + 2);
+        if (!line) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === 'progress') prog.textContent = `Calculando embeddings… ${ev.done}/${ev.total} fragmentos`;
+        else if (ev.type === 'done') {
+          prog.textContent = `✓ "${ev.name}" indexada: ${ev.files} archivos, ${ev.chunks} fragmentos.`;
+          $('docs-name').value = ''; $('docs-folder').value = '';
+          renderDocsList(await loadRagCollections());
+        } else if (ev.type === 'error') throw new Error(ev.message);
+      }
+    }
+  } catch (err) {
+    prog.textContent = '⚠ ' + err.message;
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -1018,6 +1188,10 @@ $('btn-mcp-reload').onclick = async e => {
 };
 $('btn-free-apis').onclick = openFreeApis;
 $('btn-hub').onclick = openHub;
+$('btn-docs').onclick = openDocs;
+$('btn-close-docs').onclick = () => $('docs-overlay').classList.add('hidden');
+$('docs-overlay').onclick = e => { if (e.target.id === 'docs-overlay') $('docs-overlay').classList.add('hidden'); };
+$('btn-docs-index').onclick = indexDocs;
 $('btn-close-hub').onclick = () => $('hub-overlay').classList.add('hidden');
 $('hub-overlay').onclick = e => { if (e.target.id === 'hub-overlay') $('hub-overlay').classList.add('hidden'); };
 $('btn-hub-search').onclick = hubSearch;
@@ -1072,6 +1246,7 @@ mainEl.addEventListener('drop', e => {
 (async function init() {
   await loadConfig();
   refreshLocalStatus();
+  loadRagCollections();
   setInterval(refreshLocalStatus, 15000);
   await migrateLocalChats(); // una sola vez: pasa los chats antiguos del navegador a disco
   await loadChatIndex();
