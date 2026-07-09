@@ -36,7 +36,12 @@ body {
 #sidebar {
   width: 290px;
   min-width: 290px;
-  background: var(--bg-panel);
+  /* La elfa de DEDLIT: fondo semitransparente con velo oscuro para
+     mantener la legibilidad del texto */
+  background:
+    linear-gradient(180deg, rgba(15, 17, 23, 0.52) 0%, rgba(15, 17, 23, 0.66) 50%, rgba(18, 21, 29, 0.85) 100%),
+    url('bg-elf.jpg') top center / cover no-repeat,
+    var(--bg-panel);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -71,10 +76,11 @@ body {
   font-size: 11.5px;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  color: var(--text-dim);
+  color: #aab2c5;
   display: flex;
   align-items: center;
   gap: 6px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 
 select, input[type="text"], input[type="password"], textarea {
@@ -96,7 +102,7 @@ button.mini {
 button.mini:hover { color: var(--accent-hover); }
 
 /* Interruptor modo agente */
-.toggle-row { display: flex; align-items: center; gap: 9px; margin-top: 4px; font-size: 13px; }
+.toggle-row { display: flex; align-items: center; gap: 9px; margin-top: 4px; font-size: 13px; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); }
 .toggle-row small { color: var(--text-dim); }
 .switch { position: relative; width: 38px; height: 21px; flex-shrink: 0; }
 .switch input { opacity: 0; width: 0; height: 0; }
@@ -114,7 +120,7 @@ button.mini:hover { color: var(--accent-hover); }
 .switch input:checked + .slider::before { transform: translateX(17px); background: white; }
 
 /* Estado local */
-.status-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.status-row { display: flex; align-items: center; gap: 8px; font-size: 13px; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9); }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; }
 .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
 .dot.off { background: var(--red); }
