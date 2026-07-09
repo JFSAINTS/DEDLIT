@@ -89,12 +89,15 @@ DEDLIT es **cliente de Model Context Protocol**, el estándar de conectores de C
 ```json
 {
   "navegador": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] },
+  "canva": { "command": "npx", "args": ["-y", "mcp-remote", "https://mcp.canva.com/mcp"] },
   "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"],
               "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..." } }
 }
 ```
 
 Con el conector `navegador` el agente puede **controlar Chrome/Edge de verdad**: navegar, hacer clic, rellenar formularios, sacar capturas… Las herramientas de cada conector aparecen en el chat con el prefijo `mcp__nombre__` y piden aprobación como cualquier comando (salvo las marcadas de solo lectura por el propio conector). Hay cientos de conectores MCP publicados — cualquier servidor MCP por stdio sirve.
+
+Los **servidores MCP remotos** (Canva, y cualquier otro `https://…/mcp` con OAuth) funcionan a través del puente `mcp-remote`, como en el ejemplo: la primera vez se abre el navegador para autorizar tu cuenta y el token queda guardado localmente. Con el conector de Canva el agente puede crear diseños, rellenar plantillas y exportarlos desde el chat.
 
 > Nota: los modelos locales necesitan soporte de *function calling* para el modo agente (p. ej. `qwen2.5`, `llama3.1`, `mistral-nemo` en Ollama; en LM Studio, modelos con plantilla de herramientas).
 
