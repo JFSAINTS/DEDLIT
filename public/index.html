@@ -60,7 +60,8 @@
             <li><b>Local:</b> Ollama y LM Studio se detectan automáticamente — nada sale de tu equipo.</li>
             <li><b>Nube:</b> Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi y GLM con tu propia API key (⚙ Ajustes).</li>
             <li><b>¿Sin API key?</b> Pulsa <b>🎁 APIs gratis</b>: OpenRouter, Gemini, Groq, Cerebras, GitHub Models y más ofrecen nivel gratuito.</li>
-            <li><b>Modo agente:</b> el modelo puede leer/escribir archivos y ejecutar comandos <i>con tu aprobación</i>.</li>
+            <li><b>Modo agente:</b> el modelo puede leer/buscar/escribir archivos, usar la terminal, leer páginas web y abrir tu navegador — <i>con tu aprobación</i>.</li>
+            <li><b>Conectores MCP:</b> añade en ⚙ Ajustes los mismos conectores de Claude Desktop (control de Chrome con Playwright, GitHub, bases de datos…).</li>
             <li><b>Multimedia:</b> adjunta imágenes, audio o vídeo con 📎 (según el modelo), y genera imágenes 🖼️, voz 🔊 o transcripciones 📝 con el selector de modo.</li>
             <li><b>VS Code:</b> apunta Continue/Cline al gateway <code id="gw-url">http://127.0.0.1:8642/v1</code>.</li>
           </ul>
@@ -120,7 +121,16 @@
         <label class="check-row"><input type="checkbox" id="cfg-auto-read"> Lectura (listar directorios, leer archivos)</label>
         <label class="check-row"><input type="checkbox" id="cfg-auto-write"> Escritura (crear/modificar archivos)</label>
         <label class="check-row"><input type="checkbox" id="cfg-auto-command"> Comandos (PowerShell, git, instalaciones)</label>
+        <label class="check-row"><input type="checkbox" id="cfg-auto-network"> Red (descargar páginas web con fetch_url)</label>
         <p class="hint">Lo que no esté marcado te pedirá aprobación en el chat antes de ejecutarse.</p>
+
+        <h3>Conectores (MCP) <button id="btn-mcp-reload" class="mini" title="Arrancar/recargar conectores ahora">⟳ probar</button></h3>
+        <p class="hint">DEDLIT es cliente de <b>Model Context Protocol</b>, el estándar de conectores de Claude Desktop: navegador, GitHub, bases de datos… Mismo formato de configuración. Ejemplo para controlar Chrome/Edge con Playwright (requiere Node en el PATH):</p>
+        <pre class="hint" style="background:var(--bg-input);padding:8px 10px;border-radius:8px;overflow-x:auto">{
+  "navegador": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] }
+}</pre>
+        <textarea id="cfg-mcp" rows="6" spellcheck="false" placeholder='{ }'></textarea>
+        <div id="mcp-status"></div>
 
         <h3>API keys y endpoints</h3>
         <p class="hint">Las keys se guardan cifradas (AES-256-GCM) en tu carpeta de usuario y nunca salen de tu equipo salvo hacia el proveedor correspondiente. Deja el campo vacío para no cambiar; escribe <code>-</code> para borrar una key.</p>

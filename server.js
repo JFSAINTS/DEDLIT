@@ -11,6 +11,7 @@ const configLib = require('./lib/config');
 const providers = require('./lib/providers');
 const agent = require('./lib/agent');
 const media = require('./lib/media');
+const mcp = require('./lib/mcp');
 
 const PORT = Number(process.env.DEDLIT_PORT || 8642);
 const PUBLIC = path.join(__dirname, 'public');
@@ -73,6 +74,7 @@ async function handleApi(req, res, url) {
       providers: provs,
       workspace: cfg.workspace,
       autoApprove: cfg.autoApprove,
+      mcpServers: cfg.mcpServers,
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
       lastModel: cfg.lastModel,
@@ -100,8 +102,20 @@ async function handleApi(req, res, url) {
         else delete cfg.baseUrls[id];
       }
     }
+    if (body.mcpServers && typeof body.mcpServers === 'object') {
+      cfg.mcpServers = body.mcpServers;
+    }
     configLib.save(cfg);
     return json(res, 200, { ok: true });
+  }
+
+  // Estado y recarga de conectores MCP
+  if (url.pathname === '/api/mcp/status' && req.method === 'GET') {
+    return json(res, 200, { servers: mcp.status() });
+  }
+  if (url.pathname === '/api/mcp/reload' && req.method === 'POST') {
+    await mcp.sync(cfg);
+    return json(res, 200, { servers: mcp.status() });
   }
 
   // Modelos de un proveedor
@@ -218,7 +232,11 @@ async function chatHandler(req, res, body, cfg) {
     msgs.unshift({ role: 'system', content: agent.systemPrompt(cfg.workspace) });
   }
   const newMessages = agentMode && msgs.length > messages.length ? [msgs[0]] : [];
-  const tools = agentMode ? agent.TOOLS : null;
+  let tools = null;
+  if (agentMode) {
+    try { await mcp.sync(cfg); } catch { /* los conectores no deben tumbar el chat */ }
+    tools = [...agent.TOOLS, ...mcp.getTools()];
+  }
   const maxIter = cfg.maxAgentIterations || 25;
 
   try {
@@ -264,7 +282,7 @@ async function chatHandler(req, res, body, cfg) {
 
       for (const call of calls) {
         if (aborted) break;
-        const category = agent.toolCategory(call.name);
+        const category = mcp.isMcpTool(call.name) ? mcp.toolCategory(call.name) : agent.toolCategory(call.name);
         const auto = cfg.autoApprove[category];
         let approved = true;
 
@@ -280,9 +298,11 @@ async function chatHandler(req, res, body, cfg) {
           });
         }
 
-        const result = approved
-          ? await agent.execute(call.name, call.args, cfg.workspace)
-          : '[El usuario rechazó la ejecución de esta herramienta. Pregunta cómo proceder o intenta otra vía.]';
+        const result = !approved
+          ? '[El usuario rechazó la ejecución de esta herramienta. Pregunta cómo proceder o intenta otra vía.]'
+          : mcp.isMcpTool(call.name)
+            ? await mcp.execute(call.name, call.args)
+            : await agent.execute(call.name, call.args, cfg.workspace);
 
         sse(res, { type: 'tool_result', id: call.id, approved, result: result.slice(0, 4000) });
         const toolMsg = { role: 'tool', tool_call_id: call.id, content: result };

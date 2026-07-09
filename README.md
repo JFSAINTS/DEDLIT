@@ -69,11 +69,27 @@ El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nive
 
 Activa el interruptor **Modo agente** en la barra lateral. El modelo obtiene herramientas para:
 
-- `list_directory` / `read_file` — inspeccionar el workspace (aprobación automática por defecto)
+- `list_directory` / `read_file` / `search_files` — inspeccionar y buscar en el workspace (aprobación automática por defecto)
 - `write_file` — crear o modificar archivos (**requiere tu aprobación** por defecto)
-- `run_command` — PowerShell: instalar paquetes, ejecutar tests, `git`, `gh` para GitHub, verificar versiones… (**requiere tu aprobación** por defecto)
+- `run_command` — terminal (PowerShell en Windows, bash en macOS/Linux): instalar paquetes, ejecutar tests, `git`, `gh` para GitHub… (**requiere tu aprobación** por defecto)
+- `fetch_url` — leer páginas web o APIs como texto (**requiere tu aprobación** por defecto)
+- `open_in_browser` — abrir una URL en tu navegador por defecto (**requiere tu aprobación** por defecto)
 
 Cada acción aparece como una tarjeta en el chat con los argumentos exactos; tú decides **Aprobar** o **Rechazar**. Las políticas de aprobación automática y el workspace raíz se cambian en ⚙ Ajustes.
+
+## Conectores (MCP)
+
+DEDLIT es **cliente de Model Context Protocol**, el estándar de conectores de Claude Desktop / Claude Code, con el mismo formato de configuración. En ⚙ Ajustes → *Conectores (MCP)* pega, por ejemplo:
+
+```json
+{
+  "navegador": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] },
+  "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"],
+              "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..." } }
+}
+```
+
+Con el conector `navegador` el agente puede **controlar Chrome/Edge de verdad**: navegar, hacer clic, rellenar formularios, sacar capturas… Las herramientas de cada conector aparecen en el chat con el prefijo `mcp__nombre__` y piden aprobación como cualquier comando (salvo las marcadas de solo lectura por el propio conector). Hay cientos de conectores MCP publicados — cualquier servidor MCP por stdio sirve.
 
 > Nota: los modelos locales necesitan soporte de *function calling* para el modo agente (p. ej. `qwen2.5`, `llama3.1`, `mistral-nemo` en Ollama; en LM Studio, modelos con plantilla de herramientas).
 

@@ -580,12 +580,37 @@ async function refreshLocalStatus() {
 
 // ---------- Modal de ajustes ----------
 
+function renderMcpStatus(servers) {
+  const cont = $('mcp-status');
+  if (!servers.length) {
+    cont.innerHTML = '<p class="hint">Sin conectores configurados o aún no arrancados (se arrancan al usar el modo agente, o con ⟳ probar).</p>';
+    return;
+  }
+  cont.innerHTML = servers.map(s => {
+    const dot = s.status === 'ok' ? '🟢' : s.status === 'iniciando' ? '🟡' : '🔴';
+    const detail = s.status === 'ok'
+      ? s.tools + ' herramientas'
+      : escapeHtml((s.error || s.status).slice(0, 160));
+    return `<p class="hint">${dot} <b>${escapeHtml(s.name)}</b> — ${detail}</p>`;
+  }).join('');
+}
+
+async function refreshMcpStatus(reload) {
+  try {
+    const res = await fetch('/api/mcp/' + (reload ? 'reload' : 'status'), reload ? { method: 'POST' } : undefined);
+    renderMcpStatus((await res.json()).servers || []);
+  } catch { /* servidor ocupado */ }
+}
+
 function openSettings() {
   const c = state.config;
   $('cfg-workspace').value = c.workspace;
   $('cfg-auto-read').checked = c.autoApprove.read;
   $('cfg-auto-write').checked = c.autoApprove.write;
   $('cfg-auto-command').checked = c.autoApprove.command;
+  $('cfg-auto-network').checked = !!c.autoApprove.network;
+  $('cfg-mcp').value = JSON.stringify(c.mcpServers || {}, null, 2);
+  refreshMcpStatus(false);
   $('cfg-gateway').textContent = c.gatewayUrl;
 
   const cont = $('cfg-providers');
@@ -621,6 +646,14 @@ async function saveSettings() {
   document.querySelectorAll('[data-base]').forEach(inp => {
     baseUrls[inp.dataset.base] = inp.value.trim(); // '' = restaurar por defecto
   });
+  let mcpServers;
+  try {
+    mcpServers = JSON.parse($('cfg-mcp').value.trim() || '{}');
+    if (typeof mcpServers !== 'object' || Array.isArray(mcpServers)) throw new Error('debe ser un objeto {nombre: {command, args}}');
+  } catch (err) {
+    alert('El JSON de conectores MCP no es válido: ' + err.message);
+    return;
+  }
   const btn = $('btn-save-config');
   btn.disabled = true;
   btn.textContent = 'Guardando…';
@@ -633,15 +666,17 @@ async function saveSettings() {
         autoApprove: {
           read: $('cfg-auto-read').checked,
           write: $('cfg-auto-write').checked,
-          command: $('cfg-auto-command').checked
+          command: $('cfg-auto-command').checked,
+          network: $('cfg-auto-network').checked
         },
-        keys, baseUrls
+        keys, baseUrls, mcpServers
       })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) throw new Error(data.error || 'HTTP ' + res.status);
     await loadConfig();
     refreshLocalStatus();
+    fetch('/api/mcp/reload', { method: 'POST' }).catch(() => {}); // arrancar conectores en segundo plano
     btn.textContent = '✓ Guardado';
     setTimeout(() => {
       $('modal-overlay').classList.add('hidden');
@@ -710,6 +745,21 @@ $('sel-model').onchange = updateCaps;
 $('inp-model-manual').oninput = updateCaps;
 $('btn-refresh-models').onclick = () => loadModels();
 $('btn-settings').onclick = openSettings;
+$('btn-mcp-reload').onclick = async e => {
+  e.preventDefault();
+  const btn = $('btn-mcp-reload');
+  btn.textContent = '⏳';
+  // guardar primero el JSON del textarea para probar lo que el usuario ve
+  try {
+    const mcpServers = JSON.parse($('cfg-mcp').value.trim() || '{}');
+    await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mcpServers }) });
+    await refreshMcpStatus(true);
+  } catch (err) {
+    alert('JSON de conectores no válido: ' + err.message);
+  }
+  btn.textContent = '⟳ probar';
+};
 $('btn-free-apis').onclick = openFreeApis;
 $('btn-close-free').onclick = () => $('free-overlay').classList.add('hidden');
 $('free-overlay').onclick = e => { if (e.target.id === 'free-overlay') $('free-overlay').classList.add('hidden'); };
