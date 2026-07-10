@@ -216,14 +216,17 @@ function saveChats() {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat })
   }).catch(() => {});
-  const meta = { id: chat.id, title: chat.title, updatedAt: chat.updatedAt, count: chat.messages.length };
+  const meta = { id: chat.id, title: chat.title, updatedAt: chat.updatedAt, count: chat.messages.length, projectId: chat.projectId || '' };
   const i = state.chatIndex.findIndex(c => c.id === chat.id);
   if (i >= 0) state.chatIndex[i] = meta;
   else state.chatIndex.unshift(meta);
 }
 
 function newChat() {
-  state.currentChat = { id: Date.now().toString(36), title: 'Nueva conversación', messages: [], createdAt: Date.now() };
+  state.currentChat = {
+    id: Date.now().toString(36), title: 'Nueva conversación', messages: [],
+    createdAt: Date.now(), projectId: projectFilter() || ''
+  };
   renderChatList();
   renderMessages();
 }
@@ -270,8 +273,12 @@ function renderChatList(items) {
   const list = $('chat-list');
   list.innerHTML = '';
   let metas = items || [...state.chatIndex].sort((a, b) => b.updatedAt - a.updatedAt);
+  // filtrar por proyecto activo (solo en la vista normal, no en búsquedas)
+  const proj = projectFilter();
+  if (!items && proj) metas = metas.filter(c => c.projectId === proj);
   // el chat recién creado (sin guardar aún) se muestra arriba
-  if (!items && state.currentChat && !metas.some(c => c.id === state.currentChat.id)) {
+  if (!items && state.currentChat && !metas.some(c => c.id === state.currentChat.id) &&
+      (!proj || state.currentChat.projectId === proj)) {
     metas = [{ id: state.currentChat.id, title: state.currentChat.title }, ...metas];
   }
   for (const meta of metas) {
@@ -539,7 +546,8 @@ async function runTurn(chat) {
         provider, model,
         messages: chat.messages,
         agentMode: $('chk-agent').checked,
-        ragId: $('sel-rag').value || undefined
+        ragId: $('sel-rag').value || undefined,
+        projectId: chat.projectId || undefined
       }),
       signal: state.abortController.signal
     });
@@ -737,6 +745,7 @@ async function loadConfig() {
   }
   const gwEl = $('gw-url');
   if (gwEl) gwEl.textContent = state.config.gatewayUrl;
+  renderProjectSelect();
   await loadModels(state.config.lastModel);
 }
 
@@ -809,6 +818,7 @@ async function refreshMcpStatus(reload) {
 
 function openSettings() {
   const c = state.config;
+  $('cfg-lang').value = dedlitLang();
   $('cfg-workspace').value = c.workspace;
   $('cfg-lmdir').value = c.lmstudioModelsDir || '';
   $('cfg-lmdir').placeholder = c.lmstudioModelsDirDefault || '~/.lmstudio/models';
@@ -906,6 +916,111 @@ async function saveSettings() {
     btn.disabled = false;
     alert('No se pudo guardar la configuración: ' + err.message);
   }
+}
+
+// ---------- Proyectos ----------
+
+let editingProjectId = null;
+
+function projectFilter() {
+  return $('sel-project').value;
+}
+
+function renderProjectSelect() {
+  const sel = $('sel-project');
+  const current = localStorage.getItem('dedlit.project') || '';
+  sel.innerHTML = '<option value="">📁 Todos</option>';
+  for (const p of state.config?.projects || []) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = '📁 ' + p.name;
+    sel.appendChild(opt);
+  }
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+}
+
+async function openProjects() {
+  editingProjectId = null;
+  $('proj-form-title').textContent = 'Nuevo proyecto';
+  $('proj-name').value = '';
+  $('proj-instructions').value = '';
+  // colecciones RAG disponibles para el select
+  const collections = await loadRagCollections();
+  const sel = $('proj-rag');
+  sel.innerHTML = '<option value="">(sin documentos por defecto)</option>';
+  for (const c of collections) {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = '📚 ' + c.name;
+    sel.appendChild(opt);
+  }
+  renderProjList();
+  $('proj-overlay').classList.remove('hidden');
+}
+
+function renderProjList() {
+  const cont = $('proj-list');
+  const projects = state.config?.projects || [];
+  if (!projects.length) {
+    cont.innerHTML = '<p class="hint">Aún no hay proyectos.</p>';
+    return;
+  }
+  cont.innerHTML = '';
+  for (const p of projects) {
+    const div = document.createElement('div');
+    div.className = 'provider-cfg';
+    div.innerHTML = `
+      <div class="pname">📁 ${escapeHtml(p.name)}
+        <span class="key-link" style="margin-left:auto"><a href="#" data-edit="${p.id}">editar</a> · <a href="#" data-del="${p.id}">borrar</a></span>
+      </div>
+      ${p.instructions ? `<p class="hint">${escapeHtml(p.instructions.slice(0, 120))}${p.instructions.length > 120 ? '…' : ''}</p>` : ''}`;
+    div.querySelector('[data-edit]').onclick = e => {
+      e.preventDefault();
+      editingProjectId = p.id;
+      $('proj-form-title').textContent = 'Editar «' + p.name + '»';
+      $('proj-name').value = p.name;
+      $('proj-instructions').value = p.instructions || '';
+      $('proj-rag').value = p.ragId || '';
+    };
+    div.querySelector('[data-del]').onclick = async e => {
+      e.preventDefault();
+      await saveProjects(state.config.projects.filter(x => x.id !== p.id));
+      renderProjList();
+      renderProjectSelect();
+      renderChatList();
+    };
+    cont.appendChild(div);
+  }
+}
+
+async function saveProjects(projects) {
+  state.config.projects = projects;
+  await fetch('/api/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projects })
+  }).catch(() => {});
+}
+
+async function saveProjectForm() {
+  const name = $('proj-name').value.trim();
+  if (!name) { alert('Pon un nombre al proyecto.'); return; }
+  const data = {
+    id: editingProjectId || Date.now().toString(36),
+    name,
+    instructions: $('proj-instructions').value.trim(),
+    ragId: $('proj-rag').value
+  };
+  const projects = [...(state.config.projects || [])];
+  const i = projects.findIndex(p => p.id === data.id);
+  if (i >= 0) projects[i] = data; else projects.push(data);
+  await saveProjects(projects);
+  editingProjectId = null;
+  $('proj-form-title').textContent = 'Nuevo proyecto';
+  $('proj-name').value = '';
+  $('proj-instructions').value = '';
+  $('proj-rag').value = '';
+  renderProjList();
+  renderProjectSelect();
 }
 
 // ---------- Plantillas de prompts ----------
@@ -1252,6 +1367,7 @@ function openFreeApis() {
 
 $('btn-new-chat').onclick = newChat;
 $('btn-theme').onclick = toggleTheme;
+$('cfg-lang').onchange = () => setLanguage($('cfg-lang').value);
 $('btn-send').onclick = sendMessage;
 $('btn-stop').onclick = () => state.abortController?.abort();
 $('btn-regenerate').onclick = regenerateLast;
@@ -1293,6 +1409,14 @@ $('btn-free-apis').onclick = openFreeApis;
 $('btn-hub').onclick = openHub;
 $('btn-docs').onclick = openDocs;
 $('btn-templates').onclick = openTemplates;
+$('btn-projects').onclick = openProjects;
+$('btn-close-proj').onclick = () => $('proj-overlay').classList.add('hidden');
+$('proj-overlay').onclick = e => { if (e.target.id === 'proj-overlay') $('proj-overlay').classList.add('hidden'); };
+$('btn-proj-save').onclick = saveProjectForm;
+$('sel-project').onchange = () => {
+  localStorage.setItem('dedlit.project', $('sel-project').value);
+  renderChatList();
+};
 $('btn-close-tpl').onclick = () => $('tpl-overlay').classList.add('hidden');
 $('tpl-overlay').onclick = e => { if (e.target.id === 'tpl-overlay') $('tpl-overlay').classList.add('hidden'); };
 $('btn-tpl-save').onclick = addTemplate;
@@ -1300,7 +1424,7 @@ $('btn-tpl-save').onclick = addTemplate;
 // Atajos de teclado globales
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    for (const id of ['modal-overlay', 'free-overlay', 'hub-overlay', 'docs-overlay', 'tpl-overlay']) {
+    for (const id of ['modal-overlay', 'free-overlay', 'hub-overlay', 'docs-overlay', 'tpl-overlay', 'proj-overlay']) {
       $(id)?.classList.add('hidden');
     }
     return;

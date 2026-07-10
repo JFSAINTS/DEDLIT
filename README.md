@@ -89,6 +89,8 @@ El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nive
 - **📋 Plantillas de prompts** reutilizables con huecos `{{campo}}` que se rellenan al usarlas.
 - **Atajos**: `Ctrl+K` buscar en el historial, `Ctrl+Shift+O` nuevo chat, `Ctrl+,` ajustes, `Alt+A` modo agente, `Esc` cerrar ventanas.
 - **Tema claro/oscuro** con el botón 🌗 de la barra lateral (se recuerda tu elección).
+- **📁 Proyectos**: agrupa conversaciones con sus propias instrucciones y colección de documentos por defecto; el selector filtra la lista y los chats nuevos nacen dentro del proyecto activo.
+- **Interfaz en español o inglés** (selector en Ajustes).
 - Con modelos locales (Ollama / LM Studio), **ningún dato sale de tu máquina**.
 
 ## Modo agente

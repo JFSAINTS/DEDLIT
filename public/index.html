@@ -51,7 +51,12 @@
       </div>
 
       <div class="sidebar-section grow">
-        <label>Conversaciones</label>
+        <label>Conversaciones
+          <select id="sel-project" title="Proyecto: agrupa chats con sus propias instrucciones y documentos" style="margin-left:auto;width:auto;max-width:150px;font-size:11px;padding:3px 6px">
+            <option value="">📁 Todos</option>
+          </select>
+          <button id="btn-projects" class="mini" title="Gestionar proyectos">🛠</button>
+        </label>
         <input type="text" id="inp-chat-search" placeholder="🔍 Buscar en el historial…">
         <div id="chat-list"></div>
       </div>
@@ -110,6 +115,27 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- Modal de proyectos -->
+  <div id="proj-overlay" class="hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>📁 Proyectos</h2>
+        <button id="btn-close-proj">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint">Un proyecto agrupa conversaciones y les aplica sus propias <b>instrucciones</b> y su <b>colección de documentos</b> por defecto. Elige el proyecto activo en la barra lateral: los chats nuevos se crean dentro de él y la lista se filtra.</p>
+        <div id="proj-list"></div>
+        <h3 id="proj-form-title">Nuevo proyecto</h3>
+        <input type="text" id="proj-name" placeholder="Nombre (p. ej. Web de la tienda)">
+        <textarea id="proj-instructions" rows="3" placeholder="Instrucciones del proyecto (opcional)… p. ej.: Eres un experto en Vue 3. El código va en TypeScript."></textarea>
+        <select id="proj-rag" title="Colección de documentos por defecto del proyecto">
+          <option value="">(sin documentos por defecto)</option>
+        </select>
+        <button id="btn-proj-save" class="primary" style="align-self:flex-start">Guardar proyecto</button>
+      </div>
+    </div>
   </div>
 
   <!-- Modal de plantillas de prompts -->
@@ -196,6 +222,12 @@
         <button id="btn-close-modal">✕</button>
       </div>
       <div class="modal-body">
+        <h3>Idioma de la interfaz</h3>
+        <select id="cfg-lang" style="width:auto">
+          <option value="es">Español</option>
+          <option value="en">English</option>
+        </select>
+
         <h3>Workspace del agente</h3>
         <input type="text" id="cfg-workspace" placeholder="I:\DEDLIT">
         <p class="hint">Carpeta raíz donde el agente trabaja por defecto.</p>
@@ -251,6 +283,7 @@
     </div>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

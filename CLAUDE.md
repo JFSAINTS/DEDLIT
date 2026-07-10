@@ -36,5 +36,5 @@ Sin tests automatizados por ahora; para probar sin proveedor real, hay un patró
 ## Principios
 
 - Privacidad primero: nada de telemetría, nada de peticiones a terceros salvo a los proveedores configurados por el usuario, escuchar solo en localhost.
-- Los textos de la interfaz están en español.
+- Los textos de la interfaz están en español (idioma nativo); el inglés se aplica traduciendo el DOM con el diccionario de `public/i18n.js` — al añadir texto nuevo a la interfaz, añadir su entrada al diccionario.
 - Acciones del agente destructivas o de escritura piden aprobación por defecto; no cambiar los valores por defecto de `autoApprove`.

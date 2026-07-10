@@ -86,6 +86,7 @@ async function handleApi(req, res, url) {
       ttsUrl: cfg.ttsUrl || '',
       customInstructions: cfg.customInstructions || '',
       promptTemplates: cfg.promptTemplates || [],
+      projects: cfg.projects || [],
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
       lastModel: cfg.lastModel,
@@ -126,6 +127,12 @@ async function handleApi(req, res, url) {
       cfg.promptTemplates = body.promptTemplates
         .filter(t => t && typeof t.name === 'string' && typeof t.text === 'string')
         .slice(0, 100);
+    }
+    if (Array.isArray(body.projects)) {
+      cfg.projects = body.projects
+        .filter(p => p && typeof p.id === 'string' && typeof p.name === 'string')
+        .map(p => ({ id: p.id, name: p.name, instructions: String(p.instructions || ''), ragId: String(p.ragId || '') }))
+        .slice(0, 50);
     }
     configLib.save(cfg);
     return json(res, 200, { ok: true });
@@ -577,6 +584,20 @@ async function chatHandler(req, res, body, cfg) {
     if (idx >= 0) msgs[idx] = { role: 'system', content: msgs[idx].content + '\n\n' + extra };
     else msgs.unshift({ role: 'system', content: extra });
   }
+  // Proyecto: aporta instrucciones propias y colección RAG por defecto
+  if (body.projectId) {
+    const proj = (cfg.projects || []).find(p => p.id === body.projectId);
+    if (proj) {
+      if (proj.instructions && proj.instructions.trim()) {
+        const extra = 'Instrucciones del proyecto «' + proj.name + '»:\n' + proj.instructions.trim();
+        const idx = msgs.findIndex(m => m.role === 'system');
+        if (idx >= 0) msgs[idx] = { role: 'system', content: msgs[idx].content + '\n\n' + extra };
+        else msgs.unshift({ role: 'system', content: extra });
+      }
+      if (!body.ragId && proj.ragId) body.ragId = proj.ragId;
+    }
+  }
+
   // Contexto documental (RAG): buscar en la colección elegida los fragmentos
   // más afines a la última pregunta y dárselos al modelo como contexto
   if (body.ragId) {
