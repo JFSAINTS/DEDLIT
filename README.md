@@ -88,6 +88,7 @@ El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nive
 - Cada chat **recuerda su configuración** (proveedor, modelo, modo agente y colección RAG): al reabrirlo se restaura todo.
 - **📋 Plantillas de prompts** reutilizables con huecos `{{campo}}` que se rellenan al usarlas.
 - **Atajos**: `Ctrl+K` buscar en el historial, `Ctrl+Shift+O` nuevo chat, `Ctrl+,` ajustes, `Alt+A` modo agente, `Esc` cerrar ventanas.
+- **Tema claro/oscuro** con el botón 🌗 de la barra lateral (se recuerda tu elección).
 - Con modelos locales (Ollama / LM Studio), **ningún dato sale de tu máquina**.
 
 ## Modo agente

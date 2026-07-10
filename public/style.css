@@ -16,6 +16,35 @@
   --mono: 'Cascadia Code', 'Consolas', monospace;
 }
 
+/* Tema claro (alterna con el botón 🌗) */
+:root.light {
+  --bg: #f3f4f9;
+  --bg-panel: #ffffff;
+  --bg-input: #eceef5;
+  --bg-hover: #e2e5f0;
+  --border: #d3d7e3;
+  --text: #1d2233;
+  --text-dim: #5c6478;
+  --accent: #6a58e8;
+  --accent-hover: #5343cf;
+}
+:root.light .bubble pre, :root.light .tool-card pre, :root.light .hub-progress .bar {
+  background: #e6e8f1;
+  border-color: var(--border);
+}
+:root.light #sidebar {
+  background:
+    linear-gradient(180deg, rgba(243, 244, 249, 0.62) 0%, rgba(243, 244, 249, 0.78) 50%, rgba(240, 241, 247, 0.92) 100%),
+    url('bg-elf.jpg') top center / cover no-repeat,
+    var(--bg-panel);
+}
+:root.light .sidebar-section label, :root.light .status-row, :root.light .toggle-row {
+  text-shadow: 0 1px 4px rgba(255, 255, 255, 0.9);
+  color: #3a4156;
+}
+:root.light .error-card { background: #fdeaea; color: #a13030; }
+:root.light ::-webkit-scrollbar-thumb { background: #c3c8d6; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body { height: 100%; }
@@ -68,6 +97,8 @@ body {
   cursor: pointer;
 }
 .sidebar-header button:hover { background: var(--accent-hover); }
+.sidebar-header button.ghost { background: var(--bg-input); border: 1px solid var(--border); font-size: 14px; }
+.sidebar-header button.ghost:hover { border-color: var(--accent); background: var(--bg-hover); }
 
 .sidebar-section { display: flex; flex-direction: column; gap: 7px; }
 .sidebar-section.grow { flex: 1; min-height: 80px; }

@@ -15,8 +15,22 @@ const state = {
 // ---------- Mini-renderizador de Markdown ----------
 
 function escapeHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+// ---------- Tema claro/oscuro ----------
+
+function applyTheme(theme) {
+  document.documentElement.classList.toggle('light', theme === 'light');
+  localStorage.setItem('dedlit.theme', theme);
+}
+
+function toggleTheme() {
+  applyTheme(document.documentElement.classList.contains('light') ? 'dark' : 'light');
+}
+
+applyTheme(localStorage.getItem('dedlit.theme') || 'dark');
 
 function renderMarkdown(src) {
   const blocks = [];
@@ -554,6 +568,9 @@ async function runTurn(chat) {
     }
 
     function handleEvent(ev) {
+      // Si el usuario cambió a otra conversación mientras esta responde, no
+      // pintar en la vista equivocada; los mensajes se guardan igualmente
+      if (state.currentChat !== chat && ev.type !== 'done') return;
       switch (ev.type) {
         case 'text':
           ensureBubble();
@@ -1234,6 +1251,7 @@ function openFreeApis() {
 // ---------- Eventos ----------
 
 $('btn-new-chat').onclick = newChat;
+$('btn-theme').onclick = toggleTheme;
 $('btn-send').onclick = sendMessage;
 $('btn-stop').onclick = () => state.abortController?.abort();
 $('btn-regenerate').onclick = regenerateLast;
