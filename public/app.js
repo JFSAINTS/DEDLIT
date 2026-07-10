@@ -819,6 +819,11 @@ async function refreshMcpStatus(reload) {
 function openSettings() {
   const c = state.config;
   $('cfg-lang').value = dedlitLang();
+  $('cfg-autoupdate').checked = c.autoUpdateCheck !== false;
+  $('cfg-version').textContent = 'v' + (c.version || '?');
+  $('cfg-ghtoken').placeholder = c.hasUpdateToken
+    ? '●●●●●●●● token guardado — escribe para reemplazar; un guion (-) para borrar'
+    : 'Token de GitHub — solo necesario mientras el repo sea privado';
   $('cfg-workspace').value = c.workspace;
   $('cfg-lmdir').value = c.lmstudioModelsDir || '';
   $('cfg-lmdir').placeholder = c.lmstudioModelsDirDefault || '~/.lmstudio/models';
@@ -865,6 +870,9 @@ async function saveSettings() {
     else if (v === '-') keys[inp.dataset.key] = ''; // "-" = borrar
     else keys[inp.dataset.key] = v;
   });
+  // token de GitHub para actualizaciones (mismo convenio vacío/-)
+  const ghTok = $('cfg-ghtoken').value.trim();
+  if (ghTok) keys.ghupdate = ghTok === '-' ? '' : ghTok;
   document.querySelectorAll('[data-base]').forEach(inp => {
     baseUrls[inp.dataset.base] = inp.value.trim(); // '' = restaurar por defecto
   });
@@ -885,6 +893,7 @@ async function saveSettings() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         workspace: $('cfg-workspace').value.trim(),
+        autoUpdateCheck: $('cfg-autoupdate').checked,
         lmstudioModelsDir: $('cfg-lmdir').value.trim(),
         sdWebuiUrl: $('cfg-sdurl').value.trim(),
         comfyUrl: $('cfg-comfy').value.trim(),
@@ -916,6 +925,77 @@ async function saveSettings() {
     btn.disabled = false;
     alert('No se pudo guardar la configuración: ' + err.message);
   }
+}
+
+// ---------- Auto-actualización ----------
+
+async function checkForUpdate() {
+  try {
+    const info = await (await fetch('/api/update/check')).json();
+    if (info.error || !info.hasUpdate) return;
+    const banner = $('update-banner');
+    $('update-text').innerHTML = `🆕 Nueva versión <b>v${escapeHtml(info.latest)}</b> disponible (tienes v${escapeHtml(info.current)})`;
+    $('update-notes').href = info.url;
+    $('btn-update-install').style.display = info.canAutoInstall ? '' : 'none';
+    if (!info.canAutoInstall) {
+      $('update-text').innerHTML += ' — descárgala desde GitHub';
+    }
+    banner.classList.remove('hidden');
+  } catch { /* sin red o repo inaccesible: silencio */ }
+}
+
+async function installUpdate() {
+  const banner = $('update-banner');
+  banner.innerHTML = '<span id="update-text">⬇ Descargando actualización…</span><div class="bar"><div style="width:0%"></div></div>';
+  const text = banner.querySelector('#update-text');
+  const bar = banner.querySelector('.bar > div');
+  try {
+    const res = await fetch('/api/update/install', { method: 'POST' });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, i).split('\n').find(l => l.startsWith('data: '));
+        buf = buf.slice(i + 2);
+        if (!line) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === 'progress') {
+          bar.style.width = ev.pct + '%';
+          text.textContent = `⬇ Descargando actualización… ${ev.pct}% (${ev.mb} MB)`;
+        } else if (ev.type === 'done') {
+          bar.style.width = '100%';
+          text.textContent = '♻ ' + ev.note + ' La página se recargará sola.';
+          waitForRestart();
+        } else if (ev.type === 'error') {
+          throw new Error(ev.message);
+        }
+      }
+    }
+  } catch (err) {
+    // si el servidor se apagó a mitad del stream, es el reinicio esperado
+    if (String(err.message).includes('network') || String(err.message).includes('Failed to fetch')) {
+      waitForRestart();
+    } else {
+      text.textContent = '⚠ ' + err.message;
+    }
+  }
+}
+
+function waitForRestart() {
+  let attempts = 0;
+  const timer = setInterval(async () => {
+    attempts++;
+    try {
+      const r = await fetch('/api/config', { cache: 'no-store' });
+      if (r.ok) { clearInterval(timer); location.reload(); }
+    } catch { /* aún reiniciando */ }
+    if (attempts > 60) clearInterval(timer);
+  }, 2000);
 }
 
 // ---------- Proyectos ----------
@@ -1368,6 +1448,8 @@ function openFreeApis() {
 $('btn-new-chat').onclick = newChat;
 $('btn-theme').onclick = toggleTheme;
 $('cfg-lang').onchange = () => setLanguage($('cfg-lang').value);
+$('btn-update-install').onclick = installUpdate;
+$('btn-update-close').onclick = () => $('update-banner').classList.add('hidden');
 $('btn-send').onclick = sendMessage;
 $('btn-stop').onclick = () => state.abortController?.abort();
 $('btn-regenerate').onclick = regenerateLast;
@@ -1503,6 +1585,7 @@ mainEl.addEventListener('drop', e => {
   await loadConfig();
   refreshLocalStatus();
   loadRagCollections();
+  if (state.config.autoUpdateCheck !== false) checkForUpdate();
   setInterval(refreshLocalStatus, 15000);
   await migrateLocalChats(); // una sola vez: pasa los chats antiguos del navegador a disco
   await loadChatIndex();

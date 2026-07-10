@@ -71,6 +71,12 @@
 
     <!-- Zona principal -->
     <main id="main">
+      <div id="update-banner" class="hidden">
+        <span id="update-text"></span>
+        <button id="btn-update-install">⬇ Actualizar ahora</button>
+        <a id="update-notes" href="#" target="_blank" rel="noopener">Novedades</a>
+        <button id="btn-update-close" class="mini" title="Cerrar">✕</button>
+      </div>
       <div id="chat-toolbar" class="hidden">
         <span id="chat-title"></span>
         <button id="btn-regenerate" title="Regenerar la última respuesta">↻ Regenerar</button>
@@ -222,6 +228,11 @@
         <button id="btn-close-modal">✕</button>
       </div>
       <div class="modal-body">
+        <h3>Actualizaciones</h3>
+        <label class="check-row"><input type="checkbox" id="cfg-autoupdate"> Comprobar nueva versión al abrir</label>
+        <input type="password" id="cfg-ghtoken" placeholder="Token de GitHub — solo necesario mientras el repo sea privado" autocomplete="off">
+        <p class="hint">Versión actual: <b id="cfg-version"></b>. La comprobación consulta las releases de GitHub; si hay versión nueva, se avisa antes de descargar e instalar. Token: vacío = no cambiar; un guion (-) = borrar.</p>
+
         <h3>Idioma de la interfaz</h3>
         <select id="cfg-lang" style="width:auto">
           <option value="es">Español</option>

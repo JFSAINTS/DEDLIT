@@ -184,6 +184,25 @@ button.mini:hover { color: var(--accent-hover); }
 
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 
+/* Banner de actualización */
+#update-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 24px; font-size: 13px;
+  background: linear-gradient(90deg, rgba(124, 108, 245, 0.18), rgba(124, 108, 245, 0.06));
+  border-bottom: 1px solid var(--accent);
+}
+#update-text { flex: 1; }
+#update-banner button, #update-banner a {
+  background: var(--accent); color: white; border: none; cursor: pointer;
+  padding: 5px 14px; border-radius: 7px; font-size: 12.5px; text-decoration: none;
+}
+#update-banner a { background: var(--bg-input); color: var(--text); border: 1px solid var(--border); }
+#update-banner button.mini { background: none; color: var(--text-dim); padding: 2px 6px; }
+#update-banner .bar {
+  flex: 1; height: 6px; background: var(--bg-input); border-radius: 3px; overflow: hidden;
+}
+#update-banner .bar > div { height: 100%; background: var(--accent); transition: width 0.3s; }
+
 /* Barra del chat: título, regenerar y exportación */
 #chat-toolbar {
   display: flex; align-items: center; gap: 10px;

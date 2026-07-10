@@ -62,6 +62,11 @@ const I18N = {
     'Guardando…': 'Saving…',
     '✓ Guardado': '✓ Saved',
     'Idioma de la interfaz': 'Interface language',
+    'Actualizaciones': 'Updates',
+    'Comprobar nueva versión al abrir': 'Check for new version on startup',
+    '⬇ Actualizar ahora': '⬇ Update now',
+    'Novedades': 'Release notes',
+    'Versión actual:': 'Current version:',
     // Modales
     '📁 Proyectos': '📁 Projects',
     'Nuevo proyecto': 'New project',

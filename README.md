@@ -91,6 +91,7 @@ El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nive
 - **Tema claro/oscuro** con el botón 🌗 de la barra lateral (se recuerda tu elección).
 - **📁 Proyectos**: agrupa conversaciones con sus propias instrucciones y colección de documentos por defecto; el selector filtra la lista y los chats nuevos nacen dentro del proyecto activo.
 - **Interfaz en español o inglés** (selector en Ajustes).
+- **Auto-actualización**: al abrir comprueba si hay versión nueva en las releases de GitHub (desactivable en Ajustes) y, previo aviso con un banner, descarga el binario, se reemplaza a sí mismo y se reinicia solo. Desde código fuente o desde la app de macOS, el banner enlaza a la descarga manual.
 - Con modelos locales (Ollama / LM Studio), **ningún dato sale de tu máquina**.
 
 ## Modo agente

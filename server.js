@@ -15,6 +15,7 @@ const mcp = require('./lib/mcp');
 const system = require('./lib/system');
 const chats = require('./lib/chats');
 const rag = require('./lib/rag');
+const updater = require('./lib/updater');
 
 const PORT = Number(process.env.DEDLIT_PORT || 8642);
 const PUBLIC = path.join(__dirname, 'public');
@@ -87,6 +88,9 @@ async function handleApi(req, res, url) {
       customInstructions: cfg.customInstructions || '',
       promptTemplates: cfg.promptTemplates || [],
       projects: cfg.projects || [],
+      version: updater.currentVersion(),
+      autoUpdateCheck: cfg.autoUpdateCheck !== false,
+      hasUpdateToken: !!cfg.keys.ghupdate,
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
       lastModel: cfg.lastModel,
@@ -128,6 +132,7 @@ async function handleApi(req, res, url) {
         .filter(t => t && typeof t.name === 'string' && typeof t.text === 'string')
         .slice(0, 100);
     }
+    if (typeof body.autoUpdateCheck === 'boolean') cfg.autoUpdateCheck = body.autoUpdateCheck;
     if (Array.isArray(body.projects)) {
       cfg.projects = body.projects
         .filter(p => p && typeof p.id === 'string' && typeof p.name === 'string')
@@ -136,6 +141,25 @@ async function handleApi(req, res, url) {
     }
     configLib.save(cfg);
     return json(res, 200, { ok: true });
+  }
+
+  // ----- Auto-actualización (GitHub Releases) -----
+  if (url.pathname === '/api/update/check' && req.method === 'GET') {
+    try {
+      return json(res, 200, await updater.check(cfg));
+    } catch (err) {
+      return json(res, 502, { error: err.message, current: updater.currentVersion() });
+    }
+  }
+  if (url.pathname === '/api/update/install' && req.method === 'POST') {
+    sseStart(res);
+    try {
+      const info = await updater.install(cfg, (pct, bytes) => sse(res, { type: 'progress', pct, mb: +(bytes / 1048576).toFixed(0) }));
+      sse(res, { type: 'done', latest: info.latest, note: 'Actualizando y reiniciando…' });
+    } catch (err) {
+      sse(res, { type: 'error', message: err.message });
+    }
+    return res.end();
   }
 
   // ----- Historial de conversaciones en disco -----
@@ -864,7 +888,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log('');
-  console.log('  DEDLIT Studio — frontend local de IA');
+  console.log('  DEDLIT Studio v' + updater.currentVersion() + ' — frontend local de IA');
   console.log('  ------------------------------------');
   console.log(`  Interfaz:  http://127.0.0.1:${PORT}`);
   console.log(`  Gateway:   http://127.0.0.1:${PORT}/v1  (OpenAI-compatible, model = "proveedor:modelo")`);
