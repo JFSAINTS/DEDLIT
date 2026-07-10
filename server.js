@@ -85,6 +85,7 @@ async function handleApi(req, res, url) {
       sttUrl: cfg.sttUrl || '',
       ttsUrl: cfg.ttsUrl || '',
       customInstructions: cfg.customInstructions || '',
+      promptTemplates: cfg.promptTemplates || [],
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
       lastModel: cfg.lastModel,
@@ -121,6 +122,11 @@ async function handleApi(req, res, url) {
     if (typeof body.sttUrl === 'string') cfg.sttUrl = body.sttUrl.trim();
     if (typeof body.ttsUrl === 'string') cfg.ttsUrl = body.ttsUrl.trim();
     if (typeof body.customInstructions === 'string') cfg.customInstructions = body.customInstructions;
+    if (Array.isArray(body.promptTemplates)) {
+      cfg.promptTemplates = body.promptTemplates
+        .filter(t => t && typeof t.name === 'string' && typeof t.text === 'string')
+        .slice(0, 100);
+    }
     configLib.save(cfg);
     return json(res, 200, { ok: true });
   }

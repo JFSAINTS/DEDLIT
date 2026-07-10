@@ -85,6 +85,9 @@ El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nive
 - Las keys se guardan **cifradas con AES-256-GCM** en `%USERPROFILE%\.dedlit\config.json` (la clave de cifrado en `secret.key`, misma carpeta). Nunca se envían al navegador ni a ningún sitio salvo al proveedor correspondiente.
 - Las conversaciones se guardan **en tu disco** (`%USERPROFILE%\.dedlit\chats`) — se comparten entre navegadores, sobreviven a limpiezas y nunca salen de tu equipo. Puedes **buscar** en todo el historial desde la barra lateral y **exportar** cualquier chat a Markdown o JSON desde la barra superior, donde también puedes **↻ regenerar** la última respuesta.
 - En Ajustes puedes definir **instrucciones personalizadas** (p. ej. "responde siempre en español, sé conciso") que se aplican a todas tus conversaciones.
+- Cada chat **recuerda su configuración** (proveedor, modelo, modo agente y colección RAG): al reabrirlo se restaura todo.
+- **📋 Plantillas de prompts** reutilizables con huecos `{{campo}}` que se rellenan al usarlas.
+- **Atajos**: `Ctrl+K` buscar en el historial, `Ctrl+Shift+O` nuevo chat, `Ctrl+,` ajustes, `Alt+A` modo agente, `Esc` cerrar ventanas.
 - Con modelos locales (Ollama / LM Studio), **ningún dato sale de tu máquina**.
 
 ## Modo agente

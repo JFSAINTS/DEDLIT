@@ -219,11 +219,28 @@ async function openChat(id) {
     const chat = await (await fetch('/api/chats/' + encodeURIComponent(id))).json();
     if (chat.error) throw new Error(chat.error);
     state.currentChat = chat;
+    await applyChatSettings(chat.settings);
   } catch (err) {
     errorCard('No se pudo abrir la conversación: ' + err.message);
   }
   renderChatList();
   renderMessages();
+}
+
+// Cada chat recuerda su proveedor/modelo/agente/colección RAG
+async function applyChatSettings(s) {
+  if (!s) return;
+  if (s.provider && state.config?.providers?.[s.provider]) {
+    $('sel-provider').value = s.provider;
+    await loadModels(s.model);
+    if (s.model && $('sel-model').value !== s.model) $('inp-model-manual').value = s.model;
+    else $('inp-model-manual').value = '';
+    updateCaps();
+  }
+  $('chk-agent').checked = !!s.agentMode;
+  const ragSel = $('sel-rag');
+  const ragId = s.ragId || '';
+  if ([...ragSel.options].some(o => o.value === ragId)) ragSel.value = ragId;
 }
 
 async function deleteChat(id) {
@@ -453,6 +470,7 @@ async function sendMessage() {
 
   const chat = state.currentChat;
   chat.messages.push({ role: 'user', content: buildUserContent(text) });
+  chat.settings = { provider, model, agentMode: $('chk-agent').checked, ragId: $('sel-rag').value || '' };
   if (chat.title === 'Nueva conversación') chat.title = (text || state.attachments[0]?.name || 'Adjunto').slice(0, 45);
   $('inp-message').value = '';
   state.attachments = [];
@@ -873,6 +891,73 @@ async function saveSettings() {
   }
 }
 
+// ---------- Plantillas de prompts ----------
+
+function openTemplates() {
+  renderTplList();
+  $('tpl-overlay').classList.remove('hidden');
+}
+
+function renderTplList() {
+  const cont = $('tpl-list');
+  const tpls = state.config?.promptTemplates || [];
+  if (!tpls.length) {
+    cont.innerHTML = '<p class="hint">Aún no tienes plantillas guardadas.</p>';
+    return;
+  }
+  cont.innerHTML = '';
+  tpls.forEach((t, i) => {
+    const div = document.createElement('div');
+    div.className = 'provider-cfg';
+    div.innerHTML = `
+      <div class="pname">${escapeHtml(t.name)}
+        <span class="key-link" style="margin-left:auto"><a href="#" data-use="${i}">usar</a> · <a href="#" data-del="${i}">borrar</a></span>
+      </div>
+      <p class="hint">${escapeHtml(t.text.slice(0, 140))}${t.text.length > 140 ? '…' : ''}</p>`;
+    div.querySelector('[data-use]').onclick = e => { e.preventDefault(); useTemplate(t); };
+    div.querySelector('[data-del]').onclick = async e => {
+      e.preventDefault();
+      const tpls2 = state.config.promptTemplates.filter((_, j) => j !== i);
+      await saveTemplates(tpls2);
+      renderTplList();
+    };
+    cont.appendChild(div);
+  });
+}
+
+function useTemplate(t) {
+  let text = t.text;
+  // rellenar los huecos {{campo}} preguntando cada valor
+  const fields = [...new Set([...text.matchAll(/\{\{([^}]+)\}\}/g)].map(m => m[1]))];
+  for (const f of fields) {
+    const val = prompt('Valor para «' + f + '»:');
+    if (val === null) return;
+    text = text.split('{{' + f + '}}').join(val);
+  }
+  $('tpl-overlay').classList.add('hidden');
+  const inp = $('inp-message');
+  inp.value = inp.value ? inp.value + '\n' + text : text;
+  inp.focus();
+}
+
+async function saveTemplates(tpls) {
+  state.config.promptTemplates = tpls;
+  await fetch('/api/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ promptTemplates: tpls })
+  }).catch(() => {});
+}
+
+async function addTemplate() {
+  const name = $('tpl-name').value.trim();
+  const text = $('tpl-text').value.trim();
+  if (!name || !text) { alert('Pon nombre y texto a la plantilla.'); return; }
+  await saveTemplates([...(state.config.promptTemplates || []), { name, text }]);
+  $('tpl-name').value = '';
+  $('tpl-text').value = '';
+  renderTplList();
+}
+
 // ---------- Documentos (RAG local) ----------
 
 async function loadRagCollections() {
@@ -1189,6 +1274,35 @@ $('btn-mcp-reload').onclick = async e => {
 $('btn-free-apis').onclick = openFreeApis;
 $('btn-hub').onclick = openHub;
 $('btn-docs').onclick = openDocs;
+$('btn-templates').onclick = openTemplates;
+$('btn-close-tpl').onclick = () => $('tpl-overlay').classList.add('hidden');
+$('tpl-overlay').onclick = e => { if (e.target.id === 'tpl-overlay') $('tpl-overlay').classList.add('hidden'); };
+$('btn-tpl-save').onclick = addTemplate;
+
+// Atajos de teclado globales
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    for (const id of ['modal-overlay', 'free-overlay', 'hub-overlay', 'docs-overlay', 'tpl-overlay']) {
+      $(id)?.classList.add('hidden');
+    }
+    return;
+  }
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    $('inp-chat-search').focus();
+  } else if (mod && e.shiftKey && e.key.toLowerCase() === 'o') {
+    e.preventDefault();
+    newChat();
+    $('inp-message').focus();
+  } else if (mod && e.key === ',') {
+    e.preventDefault();
+    openSettings();
+  } else if (e.altKey && e.key.toLowerCase() === 'a') {
+    e.preventDefault();
+    $('chk-agent').checked = !$('chk-agent').checked;
+  }
+});
 $('btn-close-docs').onclick = () => $('docs-overlay').classList.add('hidden');
 $('docs-overlay').onclick = e => { if (e.target.id === 'docs-overlay') $('docs-overlay').classList.add('hidden'); };
 $('btn-docs-index').onclick = indexDocs;

@@ -82,6 +82,7 @@
             <li><b>Conectores MCP:</b> añade en ⚙ Ajustes los mismos conectores de Claude Desktop (control de Chrome con Playwright, GitHub, bases de datos…).</li>
             <li><b>Multimedia:</b> adjunta imágenes, audio o vídeo con 📎 (según el modelo), y genera imágenes 🖼️, voz 🔊 o transcripciones 📝 con el selector de modo.</li>
             <li><b>VS Code:</b> apunta Continue/Cline al gateway <code id="gw-url">http://127.0.0.1:8642/v1</code>.</li>
+            <li><b>Atajos:</b> <code>Ctrl+K</code> buscar · <code>Ctrl+Shift+O</code> nuevo chat · <code>Ctrl+,</code> ajustes · <code>Alt+A</code> modo agente · <code>Esc</code> cerrar.</li>
           </ul>
         </div>
       </div>
@@ -96,6 +97,7 @@
               <option value="stt">📝 Transcribir audio</option>
             </select>
             <button id="btn-attach" title="Adjuntar imagen, audio o vídeo">📎</button>
+            <button id="btn-templates" title="Plantillas de prompts">📋</button>
             <input type="file" id="inp-file" multiple accept="image/*,audio/*,video/*" class="hidden">
             <input type="text" id="inp-voice" value="alloy" title="Voz para TTS (alloy, echo, nova…)" class="hidden">
           </div>
@@ -105,6 +107,24 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- Modal de plantillas de prompts -->
+  <div id="tpl-overlay" class="hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>📋 Plantillas de prompts</h2>
+        <button id="btn-close-tpl">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint">Guarda prompts que uses a menudo y reutilízalos con un clic. Puedes incluir huecos con <code>{{campo}}</code> — al usarla, se te pedirá cada valor.</p>
+        <div id="tpl-list"></div>
+        <h3>Nueva plantilla</h3>
+        <input type="text" id="tpl-name" placeholder="Nombre (p. ej. Revisar código)">
+        <textarea id="tpl-text" rows="4" placeholder="Texto del prompt… p. ej.: Revisa este código {{lenguaje}} y señala errores y mejoras:&#10;&#10;{{código}}"></textarea>
+        <button id="btn-tpl-save" class="primary" style="align-self:flex-start">Guardar plantilla</button>
+      </div>
+    </div>
   </div>
 
   <!-- Modal de documentos (RAG) -->
