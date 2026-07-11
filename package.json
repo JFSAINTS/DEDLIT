@@ -1,6 +1,6 @@
 {
   "name": "dedlit-studio",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Frontend local y privado para trabajar con modelos de IA locales (Ollama, LM Studio) y en la nube (Claude, OpenAI, Gemini, Grok, DeepSeek, Qwen, Kimi, GLM), con modo agente estilo Claude Code y soporte multimodal.",
   "main": "server.js",
   "bin": "server.js",

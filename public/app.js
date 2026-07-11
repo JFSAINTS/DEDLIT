@@ -537,6 +537,21 @@ async function runTurn(chat) {
     }
   };
 
+  // Render agrupado: repintar el Markdown en cada fragmento es cuadrático en
+  // respuestas largas; se agrupa a un repintado cada ~80 ms
+  let renderQueued = false;
+  const renderLive = () => {
+    if (!liveBubble) return;
+    liveBubble.innerHTML = renderMarkdown(liveText);
+    liveBubble.classList.add('typing');
+    cont.scrollTop = cont.scrollHeight;
+  };
+  const scheduleRenderLive = () => {
+    if (renderQueued) return;
+    renderQueued = true;
+    setTimeout(() => { renderQueued = false; renderLive(); }, 80);
+  };
+
   state.abortController = new AbortController();
   try {
     const res = await fetch('/api/chat', {
@@ -583,9 +598,7 @@ async function runTurn(chat) {
         case 'text':
           ensureBubble();
           liveText += ev.text;
-          liveBubble.innerHTML = renderMarkdown(liveText);
-          liveBubble.classList.add('typing');
-          cont.scrollTop = cont.scrollHeight;
+          scheduleRenderLive();
           break;
         case 'tool_call': {
           if (liveBubble) { liveBubble.classList.remove('typing'); liveBubble = null; liveText = ''; }
@@ -647,7 +660,12 @@ async function runTurn(chat) {
   } catch (err) {
     if (err.name !== 'AbortError') errorCard(err.message);
   } finally {
-    if (liveBubble) liveBubble.classList.remove('typing');
+    if (liveBubble) {
+      const b = liveBubble;
+      liveBubble = null; // anula cualquier render agrupado pendiente (evita cursor colgado)
+      b.innerHTML = renderMarkdown(liveText);
+      b.classList.remove('typing');
+    }
     setStreaming(false);
     state.abortController = null;
     renderChatList();
