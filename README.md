@@ -92,6 +92,7 @@ El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nive
 - **📁 Proyectos**: agrupa conversaciones con sus propias instrucciones y colección de documentos por defecto; el selector filtra la lista y los chats nuevos nacen dentro del proyecto activo.
 - **Interfaz en español o inglés** (selector en Ajustes).
 - **Auto-actualización**: al abrir comprueba si hay versión nueva en las releases de GitHub (desactivable en Ajustes) y, previo aviso con un banner, descarga el binario, se reemplaza a sí mismo y se reinicia solo. Desde código fuente o desde la app de macOS, el banner enlaza a la descarga manual.
+- **Acceso remoto (LAN)**: en Ajustes puedes permitir el acceso desde otros equipos de tu red (móvil, portátil…) protegido con contraseña obligatoria — login con sesión en el navegador y `Authorization: Bearer <contraseña>` para el gateway /v1. Por defecto sigue siendo solo-local; se activa y desactiva sin reiniciar. No lo expongas a internet: es HTTP dentro de tu red.
 - Con modelos locales (Ollama / LM Studio), **ningún dato sale de tu máquina**.
 
 ## Modo agente

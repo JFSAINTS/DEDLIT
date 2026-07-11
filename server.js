@@ -24,6 +24,62 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 // Aprobaciones pendientes del modo agente: id -> resolve(bool)
 const pendingApprovals = new Map();
 
+// ---------- Acceso remoto (LAN) ----------
+// Por defecto DEDLIT solo escucha en 127.0.0.1. Si el usuario activa el
+// acceso remoto (con contraseña obligatoria), se escucha también en la red:
+// las peticiones locales pasan sin fricción; las remotas necesitan sesión
+// (cookie tras /api/login) o "Authorization: Bearer <contraseña>" (gateway).
+
+const sessions = new Map(); // token -> caducidad (7 días)
+const crypto = require('crypto');
+
+function sha256(s) {
+  return crypto.createHash('sha256').update(String(s)).digest('hex');
+}
+
+function isLocalReq(req) {
+  const a = req.socket.remoteAddress || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+
+function isAuthed(req, cfg) {
+  if (isLocalReq(req)) return true;
+  const cookies = Object.fromEntries((req.headers.cookie || '').split(';').map(c => c.trim().split('=')));
+  const tok = cookies.dedlit_session;
+  if (tok && sessions.get(tok) > Date.now()) return true;
+  const auth = req.headers.authorization || '';
+  if (auth.startsWith('Bearer ') && cfg.lanPasswordHash && sha256(auth.slice(7)) === cfg.lanPasswordHash) return true;
+  return false;
+}
+
+function lanUrls() {
+  const os = require('os');
+  const urls = [];
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    for (const i of ifaces || []) {
+      if (i.family === 'IPv4' && !i.internal) urls.push(`http://${i.address}:${PORT}`);
+    }
+  }
+  return urls;
+}
+
+let currentHost = null;
+
+function applyListen(cfg) {
+  const host = cfg.lanHost && cfg.lanPasswordHash ? '0.0.0.0' : '127.0.0.1';
+  if (host === currentHost) return;
+  currentHost = host;
+  const announce = () => {
+    console.log('  Escuchando en ' + host + ':' + PORT + (host === '0.0.0.0' ? '  (acceso LAN activo: ' + lanUrls().join(' · ') + ')' : ''));
+  };
+  if (server.listening) {
+    server.close(() => server.listen(PORT, host, announce));
+    server.closeAllConnections?.();
+  } else {
+    server.listen(PORT, host, announce);
+  }
+}
+
 // ---------- Utilidades HTTP ----------
 
 function json(res, status, obj) {
@@ -91,6 +147,9 @@ async function handleApi(req, res, url) {
       version: updater.currentVersion(),
       autoUpdateCheck: cfg.autoUpdateCheck !== false,
       hasUpdateToken: !!cfg.keys.ghupdate,
+      lanHost: !!cfg.lanHost,
+      hasLanPassword: !!cfg.lanPasswordHash,
+      lanUrls: cfg.lanHost && cfg.lanPasswordHash ? lanUrls() : [],
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
       lastModel: cfg.lastModel,
@@ -133,6 +192,13 @@ async function handleApi(req, res, url) {
         .slice(0, 100);
     }
     if (typeof body.autoUpdateCheck === 'boolean') cfg.autoUpdateCheck = body.autoUpdateCheck;
+    if (typeof body.lanPassword === 'string' && body.lanPassword) {
+      if (body.lanPassword === '-') { cfg.lanPasswordHash = ''; cfg.lanHost = false; }
+      else cfg.lanPasswordHash = sha256(body.lanPassword);
+    }
+    if (typeof body.lanHost === 'boolean') {
+      cfg.lanHost = body.lanHost && !!cfg.lanPasswordHash; // sin contraseña no se expone
+    }
     if (Array.isArray(body.projects)) {
       cfg.projects = body.projects
         .filter(p => p && typeof p.id === 'string' && typeof p.name === 'string')
@@ -140,6 +206,8 @@ async function handleApi(req, res, url) {
         .slice(0, 50);
     }
     configLib.save(cfg);
+    // aplicar cambios de escucha LAN después de responder (cierra conexiones)
+    setTimeout(() => applyListen(cfg), 150);
     return json(res, 200, { ok: true });
   }
 
@@ -877,6 +945,28 @@ function serveMedia(res, url) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   try {
+    // Peticiones remotas (LAN): exigir sesión salvo para el login y la
+    // interfaz estática (necesaria para mostrar la pantalla de acceso)
+    if (!isLocalReq(req)) {
+      const cfgAuth = configLib.load();
+      if (url.pathname === '/api/login' && req.method === 'POST') {
+        const body = await readBody(req);
+        if (cfgAuth.lanPasswordHash && sha256(String(body.password || '')) === cfgAuth.lanPasswordHash) {
+          const tok = crypto.randomBytes(24).toString('hex');
+          sessions.set(tok, Date.now() + 7 * 24 * 3600 * 1000);
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Set-Cookie': 'dedlit_session=' + tok + '; HttpOnly; SameSite=Lax; Max-Age=604800; Path=/'
+          });
+          return res.end('{"ok":true}');
+        }
+        return json(res, 401, { error: 'Contraseña incorrecta' });
+      }
+      if (!isAuthed(req, cfgAuth) &&
+          (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/media/'))) {
+        return json(res, 401, { error: 'Autenticación requerida' });
+      }
+    }
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
     if (url.pathname.startsWith('/v1/')) return await handleGateway(req, res, url);
     if (url.pathname.startsWith('/media/')) return serveMedia(res, url);
@@ -886,12 +976,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log('');
-  console.log('  DEDLIT Studio v' + updater.currentVersion() + ' — frontend local de IA');
-  console.log('  ------------------------------------');
-  console.log(`  Interfaz:  http://127.0.0.1:${PORT}`);
-  console.log(`  Gateway:   http://127.0.0.1:${PORT}/v1  (OpenAI-compatible, model = "proveedor:modelo")`);
-  console.log(`  Config:    ${configLib.DIR}`);
-  console.log('');
-});
+console.log('');
+console.log('  DEDLIT Studio v' + updater.currentVersion() + ' — frontend local de IA');
+console.log('  ------------------------------------');
+console.log(`  Interfaz:  http://127.0.0.1:${PORT}`);
+console.log(`  Gateway:   http://127.0.0.1:${PORT}/v1  (OpenAI-compatible, model = "proveedor:modelo")`);
+console.log(`  Config:    ${configLib.DIR}`);
+console.log('');
+applyListen(configLib.load());

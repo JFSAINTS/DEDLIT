@@ -721,7 +721,15 @@ async function transcribeAudio({ provider, model, note }) {
 const GROUP_LABELS = { local: '💻 Locales', free: '🎁 Nube — con nivel gratuito', paid: '💳 Nube — de pago' };
 
 async function loadConfig() {
-  state.config = await (await fetch('/api/config')).json();
+  const res = await fetch('/api/config');
+  if (res.status === 401) {
+    // acceso remoto sin sesión: pedir la contraseña
+    $('login-overlay').classList.remove('hidden');
+    $('login-password').focus();
+    throw new Error('login requerido');
+  }
+  state.config = await res.json();
+  $('app-version').textContent = 'v' + (state.config.version || '');
   const sel = $('sel-provider');
   sel.innerHTML = '';
   const byGroup = {};
@@ -820,6 +828,13 @@ function openSettings() {
   const c = state.config;
   $('cfg-lang').value = dedlitLang();
   $('cfg-autoupdate').checked = c.autoUpdateCheck !== false;
+  $('cfg-lan').checked = !!c.lanHost;
+  $('cfg-lanpass').placeholder = c.hasLanPassword
+    ? '●●●●●●●● contraseña guardada — escribe para reemplazar; un guion (-) para borrar'
+    : 'Contraseña de acceso remoto (obligatoria para activar; - para borrar)';
+  $('cfg-lan-urls').innerHTML = (c.lanUrls || []).length
+    ? '🌐 Accesible desde: ' + c.lanUrls.map(u => `<code>${escapeHtml(u)}</code>`).join(' · ')
+    : '';
   $('cfg-version').textContent = 'v' + (c.version || '?');
   $('cfg-ghtoken').placeholder = c.hasUpdateToken
     ? '●●●●●●●● token guardado — escribe para reemplazar; un guion (-) para borrar'
@@ -894,6 +909,8 @@ async function saveSettings() {
       body: JSON.stringify({
         workspace: $('cfg-workspace').value.trim(),
         autoUpdateCheck: $('cfg-autoupdate').checked,
+        lanHost: $('cfg-lan').checked,
+        lanPassword: $('cfg-lanpass').value.trim() || undefined,
         lmstudioModelsDir: $('cfg-lmdir').value.trim(),
         sdWebuiUrl: $('cfg-sdurl').value.trim(),
         comfyUrl: $('cfg-comfy').value.trim(),
@@ -1450,6 +1467,18 @@ $('btn-theme').onclick = toggleTheme;
 $('cfg-lang').onchange = () => setLanguage($('cfg-lang').value);
 $('btn-update-install').onclick = installUpdate;
 $('btn-update-close').onclick = () => $('update-banner').classList.add('hidden');
+
+// Login de acceso remoto
+async function doLogin() {
+  const res = await fetch('/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: $('login-password').value })
+  });
+  if (res.ok) location.reload();
+  else $('login-error').textContent = 'Contraseña incorrecta';
+}
+$('btn-login').onclick = doLogin;
+$('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 $('btn-send').onclick = sendMessage;
 $('btn-stop').onclick = () => state.abortController?.abort();
 $('btn-regenerate').onclick = regenerateLast;

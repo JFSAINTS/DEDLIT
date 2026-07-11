@@ -86,6 +86,11 @@ body {
 }
 
 .logo { font-weight: 700; font-size: 17px; letter-spacing: 1px; color: var(--accent-hover); }
+.logo small { font-size: 10px; font-weight: 400; color: var(--text-dim); letter-spacing: 0; vertical-align: 2px; }
+#login-overlay {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; align-items: center; justify-content: center; z-index: 200;
+}
 
 .sidebar-header button {
   background: var(--accent);

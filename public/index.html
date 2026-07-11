@@ -12,7 +12,7 @@
     <!-- Barra lateral -->
     <aside id="sidebar">
       <div class="sidebar-header">
-        <span class="logo">◆ DEDLIT</span>
+        <span class="logo">◆ DEDLIT <small id="app-version" title="Versión instalada"></small></span>
         <span style="display:flex;gap:6px">
           <button id="btn-theme" class="ghost" title="Cambiar tema claro/oscuro">🌗</button>
           <button id="btn-new-chat" title="Nueva conversación">＋</button>
@@ -123,6 +123,19 @@
     </main>
   </div>
 
+  <!-- Pantalla de acceso remoto -->
+  <div id="login-overlay" class="hidden">
+    <div class="modal-box" style="width:380px">
+      <div class="modal-header"><h2>🔐 DEDLIT Studio</h2></div>
+      <div class="modal-body">
+        <p class="hint">Acceso remoto: introduce la contraseña configurada en el equipo donde corre DEDLIT.</p>
+        <input type="password" id="login-password" placeholder="Contraseña" autocomplete="current-password">
+        <p class="hint" id="login-error" style="color:var(--red)"></p>
+        <button id="btn-login" class="primary">Entrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal de proyectos -->
   <div id="proj-overlay" class="hidden">
     <div class="modal-box">
@@ -228,6 +241,12 @@
         <button id="btn-close-modal">✕</button>
       </div>
       <div class="modal-body">
+        <h3>Acceso remoto (otros equipos)</h3>
+        <label class="check-row"><input type="checkbox" id="cfg-lan"> Permitir acceso desde la red local</label>
+        <input type="password" id="cfg-lanpass" placeholder="Contraseña de acceso remoto (obligatoria para activar; - para borrar)" autocomplete="new-password">
+        <p class="hint" id="cfg-lan-urls"></p>
+        <p class="hint">Con esto puedes usar DEDLIT desde el móvil u otro PC de tu casa. Las peticiones remotas piden esta contraseña (el gateway /v1 la acepta como Bearer). Ojo: la conexión es HTTP dentro de tu red; no lo expongas a internet. Windows puede pedir permiso de firewall la primera vez.</p>
+
         <h3>Actualizaciones</h3>
         <label class="check-row"><input type="checkbox" id="cfg-autoupdate"> Comprobar nueva versión al abrir</label>
         <input type="password" id="cfg-ghtoken" placeholder="Token de GitHub — solo necesario mientras el repo sea privado" autocomplete="off">
