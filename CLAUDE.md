@@ -32,7 +32,7 @@ npm run build:macos       # binarios macOS x64+arm64 (--no-bytecode, requerido e
                           #  firmar en un Mac con: codesign --sign - <binario>)
 ```
 
-Sin tests automatizados por ahora; para probar sin proveedor real, hay un patrón útil: montar un mock OpenAI-compatible en localhost y apuntar la URL base de la ranura "lmstudio" hacia él desde Ajustes o `POST /api/config`.
+Tests con el runner nativo de Node (cero dependencias): `npm test` (usa `node --test`, descubre `test/*.test.js`). Cubre lógica pura (`test/pure.test.js`), persistencia cifrada e historial (`test/storage.test.js`), extractores RAG + indexado (`test/rag.test.js`) e integración del servidor contra un mock (`test/server.test.js`). Patrón de aislamiento: los tests con disco fijan `USERPROFILE`/`HOME` a una carpeta temporal ANTES de requerir los módulos (config.DIR se calcula al cargar); helpers internos se exponen bajo `module.exports._test`; `server.js` exporta el `http.Server` y respeta `DEDLIT_SILENT`. Los tests corren en CI antes de compilar. Para probar a mano sin proveedor real: montar un mock OpenAI-compatible en localhost y apuntar la URL base de la ranura "lmstudio" hacia él desde Ajustes o `POST /api/config`.
 
 ## Principios
 

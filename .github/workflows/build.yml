@@ -26,6 +26,8 @@ jobs:
           node --check lib/providers.js
           node --check lib/agent.js
           node --check lib/media.js
+      - name: Tests automatizados
+        run: npm test
       - name: Arranque de humo
         shell: pwsh
         run: |

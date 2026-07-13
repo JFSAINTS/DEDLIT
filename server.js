@@ -70,6 +70,7 @@ function applyListen(cfg) {
   if (host === currentHost) return;
   currentHost = host;
   const announce = () => {
+    if (process.env.DEDLIT_SILENT) return;
     console.log('  Escuchando en ' + host + ':' + PORT + (host === '0.0.0.0' ? '  (acceso LAN activo: ' + lanUrls().join(' · ') + ')' : ''));
   };
   if (server.listening) {
@@ -976,11 +977,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-console.log('');
-console.log('  DEDLIT Studio v' + updater.currentVersion() + ' — frontend local de IA');
-console.log('  ------------------------------------');
-console.log(`  Interfaz:  http://127.0.0.1:${PORT}`);
-console.log(`  Gateway:   http://127.0.0.1:${PORT}/v1  (OpenAI-compatible, model = "proveedor:modelo")`);
-console.log(`  Config:    ${configLib.DIR}`);
-console.log('');
+if (!process.env.DEDLIT_SILENT) {
+  console.log('');
+  console.log('  DEDLIT Studio v' + updater.currentVersion() + ' — frontend local de IA');
+  console.log('  ------------------------------------');
+  console.log(`  Interfaz:  http://127.0.0.1:${PORT}`);
+  console.log(`  Gateway:   http://127.0.0.1:${PORT}/v1  (OpenAI-compatible, model = "proveedor:modelo")`);
+  console.log(`  Config:    ${configLib.DIR}`);
+  console.log('');
+}
 applyListen(configLib.load());
+
+module.exports = server; // handle para tests de integración
