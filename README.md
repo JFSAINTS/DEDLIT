@@ -93,7 +93,9 @@ El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nive
 - **Interfaz en español o inglés** (selector en Ajustes).
 - **Adaptada a móvil**: en pantallas estrechas la barra lateral se convierte en un cajón deslizante (botón ☰), ideal para usar DEDLIT desde el móvil vía acceso remoto LAN.
 - **Auto-actualización**: al abrir comprueba si hay versión nueva en las releases de GitHub (desactivable en Ajustes) y, previo aviso con un banner, descarga el binario, se reemplaza a sí mismo y se reinicia solo. Desde código fuente o desde la app de macOS, el banner enlaza a la descarga manual.
-- **Acceso remoto (LAN)**: en Ajustes puedes permitir el acceso desde otros equipos de tu red (móvil, portátil…) protegido con contraseña obligatoria — login con sesión en el navegador y `Authorization: Bearer <contraseña>` para el gateway /v1. Por defecto sigue siendo solo-local; se activa y desactiva sin reiniciar. No lo expongas a internet: es HTTP dentro de tu red.
+- **Acceso remoto (LAN)**: en Ajustes puedes permitir el acceso desde otros equipos de tu red (móvil, portátil…) protegido con contraseña obligatoria — login con sesión en el navegador y `Authorization: Bearer <contraseña>` para el gateway /v1. Por defecto sigue siendo solo-local; se activa y desactiva sin reiniciar. Opción de **HTTPS** con certificado autofirmado (generado sin dependencias) para cifrar la contraseña en tránsito. No lo expongas a internet.
+- **Resaltado de sintaxis** propio (sin librerías) en los bloques de código, con etiqueta de lenguaje y botón de copiar.
+- **Contador de tokens y coste** estimado por conversación en la barra del chat (los modelos locales aparecen como *gratis*).
 - Con modelos locales (Ollama / LM Studio), **ningún dato sale de tu máquina**.
 
 ## Modo agente

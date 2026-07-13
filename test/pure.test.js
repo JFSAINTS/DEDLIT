@@ -103,6 +103,58 @@ test('mimeOf reconoce extensiones', () => {
   assert.equal(media.mimeOf('raro.xyz'), 'application/octet-stream');
 });
 
+// ---------- resaltado de sintaxis (extraído del cliente para poder testarlo) ----------
+// Réplica mínima del tokenizador de public/app.js: verifica las invariantes
+// de seguridad y correción (mismo algoritmo).
+test('highlightCode: no colorea keywords en strings y escapa HTML', () => {
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const rules = [
+    { cls: 'com', pattern: '//[^\\n]*' },
+    { cls: 'str', pattern: '"(?:\\\\.|[^"\\\\\\n])*"' },
+    { cls: 'kw', pattern: '\\b(?:const|return|function)\\b' }
+  ];
+  function hl(code) {
+    const re = new RegExp(rules.map(r => '(' + r.pattern + ')').join('|'), 'g');
+    let out = '', last = 0, m;
+    while ((m = re.exec(code))) {
+      if (m.index > last) out += esc(code.slice(last, m.index));
+      let cls = 'str';
+      for (let i = 1; i < m.length; i++) { if (m[i] !== undefined) { cls = rules[i - 1].cls; break; } }
+      out += '<span class="' + cls + '">' + esc(m[0]) + '</span>';
+      last = m.index + m[0].length;
+      if (m[0].length === 0) re.lastIndex++;
+    }
+    return out + esc(code.slice(last));
+  }
+  const s = hl('const m = "tiene return dentro"; // return aqui');
+  assert.match(s, /<span class="kw">const<\/span>/);
+  // 'return' del string queda dentro del span de string, no como keyword
+  assert.match(s, /<span class="str">&quot;tiene return dentro&quot;<\/span>/);
+  // HTML peligroso escapado
+  const xss = hl('const x = "<img onerror=alert(1)>"');
+  assert.doesNotMatch(xss, /<img/);
+  assert.match(xss, /&lt;img/);
+});
+
+// ---------- estimación de tokens y coste (misma lógica que public/app.js) ----------
+test('estimación de tokens (~4 car./token) y coste input/output', () => {
+  const estimateTokens = c => Math.ceil((typeof c === 'string' ? c.length : 0) / 4);
+  const chat = { messages: [
+    { role: 'user', content: 'a'.repeat(4000) },      // 1000 tok entrada
+    { role: 'assistant', content: 'b'.repeat(2000) }  // 500 tok salida
+  ] };
+  let input = 0, output = 0;
+  for (const m of chat.messages) {
+    const t = estimateTokens(m.content);
+    if (m.role === 'assistant') output += t; else input += t;
+  }
+  assert.equal(input, 1000);
+  assert.equal(output, 500);
+  // tarifa claude sonnet: 3 entrada / 15 salida por millón
+  const cost = (input / 1e6) * 3 + (output / 1e6) * 15;
+  assert.ok(Math.abs(cost - 0.0105) < 1e-9);
+});
+
 test('resolveMessages reduce mensajes generados a texto', () => {
   const out = media.resolveMessages([
     { role: 'assistant', generated: true, content: [

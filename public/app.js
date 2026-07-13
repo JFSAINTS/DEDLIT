@@ -32,11 +32,89 @@ function toggleTheme() {
 
 applyTheme(localStorage.getItem('dedlit.theme') || 'dark');
 
+// ---------- Resaltado de sintaxis (propio, sin librerías) ----------
+// Tokeniza con una regex maestra por familia de lenguaje; comentarios y
+// cadenas van primero para no colorear palabras clave dentro de ellas.
+const HL_RULES = (() => {
+  const num = { cls: 'hl-num', pattern: '\\b0x[\\da-fA-F]+\\b|\\b\\d+\\.?\\d*(?:e[+-]?\\d+)?\\b' };
+  const strDq = { cls: 'hl-str', pattern: '"(?:\\\\.|[^"\\\\\\n])*"' };
+  const strSq = { cls: 'hl-str', pattern: "'(?:\\\\.|[^'\\\\\\n])*'" };
+  const js = [
+    { cls: 'hl-com', pattern: '/\\*[\\s\\S]*?\\*/' },
+    { cls: 'hl-com', pattern: '//[^\\n]*' },
+    { cls: 'hl-str', pattern: '`(?:\\\\[\\s\\S]|[^`\\\\])*`' },
+    strDq, strSq,
+    { cls: 'hl-kw', pattern: '\\b(?:const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|new|class|extends|super|this|typeof|instanceof|in|of|await|async|yield|try|catch|finally|throw|import|export|from|as|default|null|undefined|true|false|void|delete|static|get|set|interface|type|enum|public|private|protected|readonly)\\b' },
+    num
+  ];
+  const clike = [
+    { cls: 'hl-com', pattern: '/\\*[\\s\\S]*?\\*/' },
+    { cls: 'hl-com', pattern: '//[^\\n]*' },
+    strDq, strSq,
+    { cls: 'hl-kw', pattern: '\\b(?:int|long|short|char|float|double|bool|boolean|void|string|struct|class|public|private|protected|static|final|const|return|if|else|for|while|do|switch|case|break|continue|new|delete|this|null|nullptr|true|false|import|package|func|fn|let|mut|pub|impl|use|namespace|template|typename|virtual|override|try|catch|throw|throws|extends|implements|interface|enum|var|def)\\b' },
+    num
+  ];
+  const py = [
+    { cls: 'hl-com', pattern: '#[^\\n]*' },
+    { cls: 'hl-str', pattern: '"""[\\s\\S]*?"""|\'\'\'[\\s\\S]*?\'\'\'' },
+    strDq, strSq,
+    { cls: 'hl-kw', pattern: '\\b(?:def|class|return|if|elif|else|for|while|break|continue|import|from|as|pass|lambda|with|try|except|finally|raise|yield|global|nonlocal|del|and|or|not|in|is|None|True|False|async|await|self|print)\\b' },
+    num
+  ];
+  const bash = [
+    { cls: 'hl-com', pattern: '#[^\\n]*' },
+    { cls: 'hl-str', pattern: '"(?:\\\\.|[^"\\\\])*"|\'[^\']*\'' },
+    { cls: 'hl-var', pattern: '\\$\\w+|\\$\\{[^}]*\\}' },
+    { cls: 'hl-kw', pattern: '\\b(?:if|then|else|elif|fi|for|in|do|done|while|case|esac|function|echo|return|export|local|cd|source|sudo|npm|node|git|python|pip)\\b' }
+  ];
+  const json = [strDq, { cls: 'hl-kw', pattern: '\\b(?:true|false|null)\\b' }, num];
+  const html = [
+    { cls: 'hl-com', pattern: '<!--[\\s\\S]*?-->' },
+    { cls: 'hl-str', pattern: '"[^"]*"|\'[^\']*\'' },
+    { cls: 'hl-tag', pattern: '</?[a-zA-Z][\\w-]*|/?>' }
+  ];
+  const css = [
+    { cls: 'hl-com', pattern: '/\\*[\\s\\S]*?\\*/' },
+    { cls: 'hl-str', pattern: '"[^"]*"|\'[^\']*\'' },
+    { cls: 'hl-num', pattern: '#[\\da-fA-F]{3,8}\\b|\\b\\d+\\.?\\d*(?:px|em|rem|%|vh|vw|s|ms|deg|fr)?\\b' },
+    { cls: 'hl-kw', pattern: '@[\\w-]+|![\\w-]+' }
+  ];
+  const generic = [
+    { cls: 'hl-com', pattern: '/\\*[\\s\\S]*?\\*/|//[^\\n]*|#[^\\n]*' },
+    strDq, strSq, { cls: 'hl-str', pattern: '`(?:\\\\[\\s\\S]|[^`\\\\])*`' }, num
+  ];
+  const byLang = { js, jsx: js, ts: js, tsx: js, javascript: js, typescript: js,
+    py, python: py, json, bash, sh: bash, shell: bash, zsh: bash, ps1: bash, powershell: bash,
+    html: html, xml: html, css, scss: css, less: css,
+    java: clike, c: clike, cpp: clike, 'c++': clike, cs: clike, csharp: clike,
+    go: clike, rust: clike, rs: clike, php: clike, kotlin: clike, swift: clike, ruby: py };
+  return lang => byLang[lang] || (lang ? generic : null);
+})();
+
+function highlightCode(code, lang) {
+  const rules = HL_RULES((lang || '').toLowerCase());
+  if (!rules) return escapeHtml(code);
+  const re = new RegExp(rules.map(r => '(' + r.pattern + ')').join('|'), 'g');
+  let out = '', last = 0, m;
+  while ((m = re.exec(code))) {
+    if (m.index > last) out += escapeHtml(code.slice(last, m.index));
+    let cls = 'hl-str';
+    for (let i = 1; i < m.length; i++) { if (m[i] !== undefined) { cls = rules[i - 1].cls; break; } }
+    out += '<span class="' + cls + '">' + escapeHtml(m[0]) + '</span>';
+    last = m.index + m[0].length;
+    if (m[0].length === 0) re.lastIndex++;
+  }
+  out += escapeHtml(code.slice(last));
+  return out;
+}
+
 function renderMarkdown(src) {
   const blocks = [];
   // Extraer bloques de código primero para no procesarlos
   let text = src.replace(/```(\w*)\n?([\s\S]*?)(```|$)/g, (_, lang, code) => {
-    blocks.push(`<pre><code>${escapeHtml(code.replace(/\n$/, ''))}</code></pre>`);
+    const clean = code.replace(/\n$/, '');
+    const head = `<div class="code-head"><span class="code-lang">${escapeHtml(lang || 'texto')}</span><button class="code-copy" type="button" title="Copiar">⧉ Copiar</button></div>`;
+    blocks.push(`<div class="code-block">${head}<pre><code>${highlightCode(clean, lang)}</code></pre></div>`);
     return `\uE000${blocks.length - 1}\uE001`;
   });
   text = escapeHtml(text)
@@ -446,6 +524,53 @@ function startEditMessage(el, idx) {
   };
 }
 
+// ---------- Estimación de tokens y coste ----------
+// Heurística estándar ~4 caracteres/token. Los precios (USD por millón de
+// tokens, entrada/salida) son aproximados y editables; los modelos locales
+// son gratis. El match es por subcadena del nombre del modelo.
+const PRICING = [
+  [/gpt-4o-mini|4o-mini/, 0.15, 0.6], [/gpt-4o|chatgpt-4o/, 2.5, 10],
+  [/gpt-4\.1-mini/, 0.4, 1.6], [/gpt-4\.1/, 2, 8], [/gpt-4-turbo/, 10, 30],
+  [/o1-mini|o3-mini|o4-mini/, 1.1, 4.4], [/\bo1\b|\bo3\b/, 15, 60], [/gpt-5/, 1.25, 10],
+  [/haiku/, 0.8, 4], [/sonnet/, 3, 15], [/opus/, 15, 75],
+  [/gemini[\w.-]*flash/, 0.075, 0.3], [/gemini[\w.-]*pro/, 1.25, 5],
+  [/deepseek/, 0.27, 1.1], [/grok/, 2, 10], [/kimi|moonshot/, 0.6, 2.5],
+  [/qwen/, 0.4, 1.2], [/glm/, 0.5, 1.5], [/mistral|mixtral/, 0.7, 2.7]
+];
+const LOCAL_PROVIDERS = new Set(['ollama', 'lmstudio']);
+
+function estimateTokens(content) {
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content) ? content.filter(p => p.type === 'text').map(p => p.text).join(' ') : '';
+  let chars = text.length;
+  if (Array.isArray(content)) chars += content.filter(p => p.type !== 'text').length * 500; // imágenes/audio ~coste fijo aprox
+  return Math.ceil(chars / 4);
+}
+
+function chatStats(chat) {
+  let input = 0, output = 0;
+  for (const m of chat.messages) {
+    if (m.role === 'system') continue;
+    const t = estimateTokens(m.content) + (m.tool_calls ? 50 * m.tool_calls.length : 0);
+    if (m.role === 'assistant') output += t; else input += t;
+  }
+  const total = input + output;
+  const provider = chat.settings?.provider || $('sel-provider').value;
+  const model = (chat.settings?.model || currentModel() || '').toLowerCase();
+  let cost = null;
+  if (LOCAL_PROVIDERS.has(provider)) cost = 0;
+  else {
+    const row = PRICING.find(([re]) => re.test(model));
+    if (row) cost = (input / 1e6) * row[1] + (output / 1e6) * row[2];
+  }
+  return { total, input, output, cost };
+}
+
+function fmtTokens(n) {
+  return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
+}
+
 function updateToolbar() {
   const chat = state.currentChat;
   const has = !!(chat && chat.messages.length);
@@ -455,6 +580,14 @@ function updateToolbar() {
   $('btn-export-md').href = '/api/chats/' + encodeURIComponent(chat.id) + '/export?format=md';
   $('btn-export-json').href = '/api/chats/' + encodeURIComponent(chat.id) + '/export?format=json';
   $('btn-regenerate').style.display = chat.messages.some(m => m.role === 'assistant') ? '' : 'none';
+
+  const s = chatStats(chat);
+  let label = '~' + fmtTokens(s.total) + ' tok';
+  if (s.cost === 0) label += ' · gratis';
+  else if (s.cost != null) label += ' · ~$' + (s.cost < 0.01 ? s.cost.toFixed(4) : s.cost.toFixed(s.cost < 1 ? 3 : 2));
+  const st = $('chat-stats');
+  st.textContent = label;
+  st.title = `Estimación: ${s.input} tokens de entrada + ${s.output} de salida (≈ 4 car./token). Coste orientativo según tarifas del modelo; los modelos locales son gratis.`;
 }
 
 // ---------- Envío ----------
@@ -849,6 +982,7 @@ function openSettings() {
   $('cfg-lang').value = dedlitLang();
   $('cfg-autoupdate').checked = c.autoUpdateCheck !== false;
   $('cfg-lan').checked = !!c.lanHost;
+  $('cfg-lanhttps').checked = !!c.lanHttps;
   $('cfg-lanpass').placeholder = c.hasLanPassword
     ? '●●●●●●●● contraseña guardada — escribe para reemplazar; un guion (-) para borrar'
     : 'Contraseña de acceso remoto (obligatoria para activar; - para borrar)';
@@ -930,6 +1064,7 @@ async function saveSettings() {
         workspace: $('cfg-workspace').value.trim(),
         autoUpdateCheck: $('cfg-autoupdate').checked,
         lanHost: $('cfg-lan').checked,
+        lanHttps: $('cfg-lanhttps').checked,
         lanPassword: $('cfg-lanpass').value.trim() || undefined,
         lmstudioModelsDir: $('cfg-lmdir').value.trim(),
         sdWebuiUrl: $('cfg-sdurl').value.trim(),
@@ -1489,6 +1624,19 @@ $('btn-theme').onclick = toggleTheme;
 function openDrawer() { $('app').classList.add('drawer-open'); $('sidebar-backdrop').classList.remove('hidden'); }
 function closeDrawer() { $('app').classList.remove('drawer-open'); $('sidebar-backdrop').classList.add('hidden'); }
 $('btn-hamburger').onclick = openDrawer;
+
+// Copiar bloques de código (delegación)
+$('messages').addEventListener('click', e => {
+  const btn = e.target.closest('.code-copy');
+  if (!btn) return;
+  const code = btn.closest('.code-block')?.querySelector('code');
+  if (!code) return;
+  navigator.clipboard.writeText(code.innerText).then(() => {
+    const prev = btn.textContent;
+    btn.textContent = '✓ Copiado';
+    setTimeout(() => { btn.textContent = prev; }, 1200);
+  });
+});
 $('sidebar-backdrop').onclick = closeDrawer;
 $('cfg-lang').onchange = () => setLanguage($('cfg-lang').value);
 $('btn-update-install').onclick = installUpdate;

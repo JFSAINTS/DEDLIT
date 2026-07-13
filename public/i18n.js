@@ -38,6 +38,8 @@ const I18N = {
     'Exportar a Markdown': 'Export to Markdown',
     'Exportar a JSON': 'Export to JSON',
     'Copiar texto': 'Copy text',
+    'Copiar': 'Copy',
+    'Tokens estimados y coste aproximado de esta conversación': 'Estimated tokens and approximate cost of this conversation',
     'Editar y reenviar desde aquí': 'Edit and resend from here',
     'Tú': 'You',
     // Bienvenida
@@ -64,6 +66,7 @@ const I18N = {
     'Idioma de la interfaz': 'Interface language',
     'Acceso remoto (otros equipos)': 'Remote access (other devices)',
     'Permitir acceso desde la red local': 'Allow access from local network',
+    'Usar HTTPS (cifra la contraseña en tránsito)': 'Use HTTPS (encrypts the password in transit)',
     'Entrar': 'Log in',
     'Contraseña': 'Password',
     'Contraseña incorrecta': 'Wrong password',

@@ -3,6 +3,7 @@
 // Escucha únicamente en 127.0.0.1 para que nada sea accesible desde la red.
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -16,6 +17,7 @@ const system = require('./lib/system');
 const chats = require('./lib/chats');
 const rag = require('./lib/rag');
 const updater = require('./lib/updater');
+const selfsigned = require('./lib/selfsigned');
 
 const PORT = Number(process.env.DEDLIT_PORT || 8642);
 const PUBLIC = path.join(__dirname, 'public');
@@ -52,32 +54,61 @@ function isAuthed(req, cfg) {
   return false;
 }
 
-function lanUrls() {
+const HTTPS_PORT = PORT + 1;
+
+function lanIps() {
   const os = require('os');
-  const urls = [];
+  const ips = [];
   for (const ifaces of Object.values(os.networkInterfaces())) {
     for (const i of ifaces || []) {
-      if (i.family === 'IPv4' && !i.internal) urls.push(`http://${i.address}:${PORT}`);
+      if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
     }
   }
-  return urls;
+  return ips;
+}
+
+function lanUrls(cfg) {
+  const https = cfg && cfg.lanHttps;
+  return lanIps().map(ip => https ? `https://${ip}:${HTTPS_PORT}` : `http://${ip}:${PORT}`);
 }
 
 let currentHost = null;
+let httpsServer = null;
 
 function applyListen(cfg) {
-  const host = cfg.lanHost && cfg.lanPasswordHash ? '0.0.0.0' : '127.0.0.1';
-  if (host === currentHost) return;
-  currentHost = host;
-  const announce = () => {
-    if (process.env.DEDLIT_SILENT) return;
-    console.log('  Escuchando en ' + host + ':' + PORT + (host === '0.0.0.0' ? '  (acceso LAN activo: ' + lanUrls().join(' · ') + ')' : ''));
-  };
-  if (server.listening) {
-    server.close(() => server.listen(PORT, host, announce));
-    server.closeAllConnections?.();
-  } else {
-    server.listen(PORT, host, announce);
+  const lan = cfg.lanHost && cfg.lanPasswordHash;
+  const host = lan ? '0.0.0.0' : '127.0.0.1';
+  const log = m => { if (!process.env.DEDLIT_SILENT) console.log(m); };
+
+  // --- listener HTTP ---
+  if (host !== currentHost) {
+    currentHost = host;
+    const announce = () => log('  Escuchando en ' + host + ':' + PORT + (lan ? '  (acceso LAN activo: ' + lanUrls(cfg).join(' · ') + ')' : ''));
+    if (server.listening) {
+      server.close(() => server.listen(PORT, host, announce));
+      server.closeAllConnections?.();
+    } else {
+      server.listen(PORT, host, announce);
+    }
+  }
+
+  // --- listener HTTPS opcional (mismo handler, cifra la LAN) ---
+  const wantHttps = lan && cfg.lanHttps;
+  if (wantHttps && !httpsServer) {
+    try {
+      const hosts = ['127.0.0.1', 'localhost', ...lanIps()];
+      const { key, cert } = selfsigned.ensure(hosts);
+      httpsServer = https.createServer({ key, cert }, (req, res) => server.emit('request', req, res));
+      httpsServer.on('error', e => log('  HTTPS error: ' + e.message));
+      httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => log('  HTTPS LAN en ' + lanUrls(cfg).join(' · ')));
+    } catch (e) {
+      log('  No se pudo iniciar HTTPS: ' + e.message);
+      httpsServer = null;
+    }
+  } else if (!wantHttps && httpsServer) {
+    httpsServer.close();
+    httpsServer.closeAllConnections?.();
+    httpsServer = null;
   }
 }
 
@@ -149,8 +180,9 @@ async function handleApi(req, res, url) {
       autoUpdateCheck: cfg.autoUpdateCheck !== false,
       hasUpdateToken: !!cfg.keys.ghupdate,
       lanHost: !!cfg.lanHost,
+      lanHttps: !!cfg.lanHttps,
       hasLanPassword: !!cfg.lanPasswordHash,
-      lanUrls: cfg.lanHost && cfg.lanPasswordHash ? lanUrls() : [],
+      lanUrls: cfg.lanHost && cfg.lanPasswordHash ? lanUrls(cfg) : [],
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
       lastModel: cfg.lastModel,
@@ -200,6 +232,7 @@ async function handleApi(req, res, url) {
     if (typeof body.lanHost === 'boolean') {
       cfg.lanHost = body.lanHost && !!cfg.lanPasswordHash; // sin contraseña no se expone
     }
+    if (typeof body.lanHttps === 'boolean') cfg.lanHttps = body.lanHttps;
     if (Array.isArray(body.projects)) {
       cfg.projects = body.projects
         .filter(p => p && typeof p.id === 'string' && typeof p.name === 'string')

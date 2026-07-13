@@ -82,6 +82,7 @@
       </div>
       <div id="chat-toolbar" class="hidden">
         <span id="chat-title"></span>
+        <span id="chat-stats" title="Tokens estimados y coste aproximado de esta conversación"></span>
         <button id="btn-regenerate" title="Regenerar la última respuesta">↻ Regenerar</button>
         <a id="btn-export-md" title="Exportar a Markdown">⬇ MD</a>
         <a id="btn-export-json" title="Exportar a JSON">⬇ JSON</a>
@@ -247,8 +248,9 @@
         <h3>Acceso remoto (otros equipos)</h3>
         <label class="check-row"><input type="checkbox" id="cfg-lan"> Permitir acceso desde la red local</label>
         <input type="password" id="cfg-lanpass" placeholder="Contraseña de acceso remoto (obligatoria para activar; - para borrar)" autocomplete="new-password">
+        <label class="check-row"><input type="checkbox" id="cfg-lanhttps"> Usar HTTPS (cifra la contraseña en tránsito)</label>
         <p class="hint" id="cfg-lan-urls"></p>
-        <p class="hint">Con esto puedes usar DEDLIT desde el móvil u otro PC de tu casa. Las peticiones remotas piden esta contraseña (el gateway /v1 la acepta como Bearer). Ojo: la conexión es HTTP dentro de tu red; no lo expongas a internet. Windows puede pedir permiso de firewall la primera vez.</p>
+        <p class="hint">Con esto puedes usar DEDLIT desde el móvil u otro PC de tu casa. Las peticiones remotas piden esta contraseña (el gateway /v1 la acepta como Bearer). Con HTTPS activado, el navegador avisará de "certificado no confiable" la primera vez (es autofirmado, normal en equipos locales): acepta la excepción. No lo expongas a internet. Windows puede pedir permiso de firewall la primera vez.</p>
 
         <h3>Actualizaciones</h3>
         <label class="check-row"><input type="checkbox" id="cfg-autoupdate"> Comprobar nueva versión al abrir</label>

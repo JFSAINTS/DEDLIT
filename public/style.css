@@ -218,6 +218,11 @@ button.mini:hover { color: var(--accent-hover); }
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--text-dim); font-weight: 600;
 }
+#chat-stats {
+  font-size: 11.5px; color: var(--text-dim); white-space: nowrap;
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 9px; font-family: var(--mono);
+}
 #chat-toolbar a, #chat-toolbar button {
   color: var(--text-dim); text-decoration: none; cursor: pointer;
   background: var(--bg-input); border: 1px solid var(--border);
@@ -265,6 +270,35 @@ button.mini:hover { color: var(--accent-hover); }
 }
 .bubble pre code { background: none; padding: 0; font-size: 12.8px; line-height: 1.5; }
 .bubble a { color: var(--accent-hover); }
+
+/* Bloques de código con cabecera (lenguaje + copiar) y resaltado */
+.code-block { margin: 8px 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.code-block pre { border: none; border-radius: 0; margin: 0; }
+.code-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 10px; background: #12151d; border-bottom: 1px solid var(--border);
+}
+.code-lang { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); font-family: var(--mono); }
+.code-copy {
+  background: none; border: 1px solid var(--border); color: var(--text-dim);
+  font-size: 11px; padding: 2px 8px; border-radius: 6px; cursor: pointer;
+}
+.code-copy:hover { color: var(--accent-hover); border-color: var(--accent); }
+:root.light .code-head { background: #eceef5; }
+
+/* Colores de tokens */
+.hl-com  { color: #6b7280; font-style: italic; }
+.hl-str  { color: #7fd88f; }
+.hl-num  { color: #e0a86a; }
+.hl-kw   { color: #b28cf5; font-weight: 600; }
+.hl-var  { color: #6cb2f5; }
+.hl-tag  { color: #f08f9c; }
+:root.light .hl-com { color: #7a8290; }
+:root.light .hl-str { color: #1a8f3c; }
+:root.light .hl-num { color: #b5651d; }
+:root.light .hl-kw  { color: #6a3fd0; }
+:root.light .hl-var { color: #1f6fc4; }
+:root.light .hl-tag { color: #c23b52; }
 .bubble blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--text-dim); margin: 8px 0; }
 
 /* Tarjetas de herramientas del agente */
