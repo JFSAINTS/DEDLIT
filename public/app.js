@@ -227,6 +227,7 @@ function newChat() {
     id: Date.now().toString(36), title: 'Nueva conversación', messages: [],
     createdAt: Date.now(), projectId: projectFilter() || ''
   };
+  if (typeof closeDrawer === 'function') closeDrawer();
   renderChatList();
   renderMessages();
 }
@@ -295,6 +296,7 @@ function renderChatList(items) {
     del.onclick = e => { e.stopPropagation(); deleteChat(meta.id); };
     el.append(title, del);
     el.onclick = () => {
+      closeDrawer();
       if (meta.id === state.currentChat?.id) return;
       openChat(meta.id);
     };
@@ -1482,6 +1484,12 @@ function openFreeApis() {
 
 $('btn-new-chat').onclick = newChat;
 $('btn-theme').onclick = toggleTheme;
+
+// Cajón lateral en móvil
+function openDrawer() { $('app').classList.add('drawer-open'); $('sidebar-backdrop').classList.remove('hidden'); }
+function closeDrawer() { $('app').classList.remove('drawer-open'); $('sidebar-backdrop').classList.add('hidden'); }
+$('btn-hamburger').onclick = openDrawer;
+$('sidebar-backdrop').onclick = closeDrawer;
 $('cfg-lang').onchange = () => setLanguage($('cfg-lang').value);
 $('btn-update-install').onclick = installUpdate;
 $('btn-update-close').onclick = () => $('update-banner').classList.add('hidden');
@@ -1556,6 +1564,7 @@ document.addEventListener('keydown', e => {
     for (const id of ['modal-overlay', 'free-overlay', 'hub-overlay', 'docs-overlay', 'tpl-overlay', 'proj-overlay']) {
       $(id)?.classList.add('hidden');
     }
+    closeDrawer();
     return;
   }
   const mod = e.ctrlKey || e.metaKey;

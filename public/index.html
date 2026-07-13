@@ -9,6 +9,8 @@
 </head>
 <body>
   <div id="app">
+    <!-- Velo para cerrar el cajón lateral en móvil -->
+    <div id="sidebar-backdrop" class="hidden"></div>
     <!-- Barra lateral -->
     <aside id="sidebar">
       <div class="sidebar-header">
@@ -71,6 +73,7 @@
 
     <!-- Zona principal -->
     <main id="main">
+      <button id="btn-hamburger" title="Menú" aria-label="Abrir menú">☰</button>
       <div id="update-banner" class="hidden">
         <span id="update-text"></span>
         <button id="btn-update-install">⬇ Actualizar ahora</button>

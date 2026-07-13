@@ -471,3 +471,52 @@ button.primary:hover { background: var(--accent-hover); }
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a4358; }
+
+/* Botón hamburguesa: solo visible en móvil */
+#btn-hamburger {
+  display: none;
+  position: absolute; top: 10px; left: 10px; z-index: 30;
+  width: 38px; height: 38px; border-radius: 9px;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  color: var(--text); font-size: 18px; cursor: pointer;
+}
+#sidebar-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40;
+}
+
+/* ---------- Adaptación a móvil ---------- */
+@media (max-width: 760px) {
+  #btn-hamburger { display: block; }
+
+  /* Barra lateral como cajón deslizante */
+  #sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+    width: 82vw; max-width: 320px; min-width: 0;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 2px 0 16px rgba(0,0,0,0.4);
+  }
+  #app.drawer-open #sidebar { transform: translateX(0); }
+  #app:not(.drawer-open) #sidebar-backdrop { display: none; }
+
+  /* La zona principal ocupa todo el ancho */
+  #main { width: 100%; }
+
+  /* Deja hueco al botón hamburguesa cuando no hay barra superior */
+  #messages { padding: 18px 14px; }
+  .welcome { margin: 56px auto 20px; }
+  #chat-toolbar { padding-left: 56px; }
+  #update-banner { padding-left: 56px; flex-wrap: wrap; }
+
+  /* Composer y burbujas a lo ancho */
+  #composer-wrap { padding: 8px 12px 14px; }
+  .msg, .tool-card, .error-card, .bubble pre { max-width: 100%; }
+  #composer textarea { font-size: 16px; } /* evita el zoom automático de iOS al enfocar */
+
+  /* Modales a pantalla casi completa */
+  .modal-box, .modal-box.wide { width: 96vw; max-height: 92vh; }
+  #modal { width: 96vw; }
+
+  /* El selector de modo y adjuntos no se aprietan */
+  .composer-tools { flex-direction: row; flex-wrap: wrap; }
+}

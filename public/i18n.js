@@ -67,6 +67,8 @@ const I18N = {
     'Entrar': 'Log in',
     'Contraseña': 'Password',
     'Contraseña incorrecta': 'Wrong password',
+    'Menú': 'Menu',
+    'Abrir menú': 'Open menu',
     'Actualizaciones': 'Updates',
     'Comprobar nueva versión al abrir': 'Check for new version on startup',
     '⬇ Actualizar ahora': '⬇ Update now',
