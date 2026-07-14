@@ -119,6 +119,8 @@ El agente está orientado a objetivos: si le falta una capacidad para completar 
 
 Cada acción aparece como una tarjeta en el chat con los argumentos exactos; tú decides **Aprobar** o **Rechazar**. Las políticas de aprobación automática y el workspace raíz se cambian en ⚙ Ajustes.
 
+**Contexto del proyecto**: si el workspace contiene un `knowledge.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules` o `.dedlit.md`, su contenido se añade automáticamente al contexto del agente (convenciones, arquitectura…). Además, en cualquier mensaje puedes **mencionar archivos con `@ruta`** (p. ej. `revisa @src/app.js`) y su contenido se incluye en el prompt — resuelto de forma segura solo dentro del workspace.
+
 ## Conectores (MCP)
 
 DEDLIT es **cliente de Model Context Protocol**, el estándar de conectores de Claude Desktop / Claude Code, con el mismo formato de configuración. En ⚙ Ajustes → *Conectores (MCP)* pega, por ejemplo:

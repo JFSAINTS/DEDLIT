@@ -784,6 +784,17 @@ async function chatHandler(req, res, body, cfg) {
     }
   }
 
+  // Menciones @archivo: expandir el contenido de los archivos citados en el
+  // último mensaje del usuario (dentro del workspace) como contexto
+  {
+    const lastUser = [...msgs].reverse().find(m => m.role === 'user');
+    const q = typeof lastUser?.content === 'string'
+      ? lastUser.content
+      : (lastUser?.content || []).filter(p => p.type === 'text').map(p => p.text).join(' ');
+    const mentions = agent.expandMentions(q, cfg.workspace);
+    if (mentions) msgs.unshift({ role: 'system', content: mentions });
+  }
+
   // Contexto documental (RAG): buscar en la colección elegida los fragmentos
   // más afines a la última pregunta y dárselos al modelo como contexto
   if (body.ragId) {
