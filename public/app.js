@@ -811,6 +811,15 @@ async function runTurn(chat) {
           cont.scrollTop = cont.scrollHeight;
           break;
         }
+        case 'fallback': {
+          const div = document.createElement('div');
+          div.className = 'fallback-note';
+          const pname = state.config?.providers?.[ev.provider]?.name || ev.provider;
+          div.textContent = '↪ Proveedor no disponible; usando ' + pname + ' · ' + ev.model;
+          cont.appendChild(div);
+          cont.scrollTop = cont.scrollHeight;
+          break;
+        }
         case 'error':
           errorCard(ev.message);
           break;
@@ -1030,6 +1039,7 @@ function openSettings() {
   $('cfg-stt').value = c.sttUrl || '';
   $('cfg-tts').value = c.ttsUrl || '';
   $('cfg-instructions').value = c.customInstructions || '';
+  $('cfg-fallback').value = (c.fallbackChain || []).join('\n');
   $('cfg-auto-read').checked = c.autoApprove.read;
   $('cfg-auto-write').checked = c.autoApprove.write;
   $('cfg-auto-command').checked = c.autoApprove.command;
@@ -1101,6 +1111,7 @@ async function saveSettings() {
         sttUrl: $('cfg-stt').value.trim(),
         ttsUrl: $('cfg-tts').value.trim(),
         customInstructions: $('cfg-instructions').value,
+        fallbackChain: $('cfg-fallback').value.split('\n').map(s => s.trim()).filter(Boolean),
         autoApprove: {
           read: $('cfg-auto-read').checked,
           write: $('cfg-auto-write').checked,

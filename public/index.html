@@ -288,6 +288,10 @@
         <textarea id="cfg-instructions" rows="3" placeholder="P. ej.: Responde siempre en español. Sé conciso. Cuando escribas código, coméntalo."></textarea>
         <p class="hint">Se añaden como instrucciones de sistema a todas tus conversaciones (chat y agente).</p>
 
+        <h3>Proveedores de reserva (fallback)</h3>
+        <textarea id="cfg-fallback" rows="3" placeholder="groq:llama-3.3-70b-versatile&#10;cerebras:llama-3.3-70b&#10;openrouter:meta-llama/llama-3.3-70b-instruct:free"></textarea>
+        <p class="hint">Uno por línea, en formato <code>proveedor:modelo</code>. Si el proveedor elegido falla por límite de tasa o cuota agotada (antes de empezar a responder), DEDLIT reintenta automáticamente con estos, en orden. Ideal para encadenar servicios gratuitos.</p>
+
         <h3>Aprobaciones automáticas del agente</h3>
         <label class="check-row"><input type="checkbox" id="cfg-auto-read"> Lectura (listar directorios, leer archivos)</label>
         <label class="check-row"><input type="checkbox" id="cfg-auto-write"> Escritura (crear/modificar archivos)</label>

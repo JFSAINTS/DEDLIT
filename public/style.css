@@ -333,6 +333,10 @@ button.mini:hover { color: var(--accent-hover); }
   background: #2a1518; border: 1px solid var(--red); border-radius: var(--radius);
   padding: 10px 14px; color: #ffb3b3; font-size: 13px;
 }
+.fallback-note {
+  max-width: 850px; width: 100%; margin: 0 auto;
+  color: var(--amber); font-size: 12px; font-style: italic; padding: 2px 4px;
+}
 
 /* Chips de capacidades del modelo */
 #model-caps { display: flex; flex-wrap: wrap; gap: 5px; min-height: 0; }

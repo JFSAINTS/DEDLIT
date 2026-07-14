@@ -54,6 +54,7 @@ const I18N = {
     'ComfyUI local': 'Local ComfyUI',
     'Voz local (opcional)': 'Local voice (optional)',
     'Instrucciones personalizadas': 'Custom instructions',
+    'Proveedores de reserva (fallback)': 'Fallback providers',
     'Aprobaciones automáticas del agente': 'Agent auto-approvals',
     'Lectura (listar directorios, leer archivos)': 'Read (list directories, read files)',
     'Escritura (crear/modificar archivos)': 'Write (create/modify files)',

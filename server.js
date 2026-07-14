@@ -176,6 +176,7 @@ async function handleApi(req, res, url) {
       customInstructions: cfg.customInstructions || '',
       promptTemplates: cfg.promptTemplates || [],
       projects: cfg.projects || [],
+      fallbackChain: cfg.fallbackChain || [],
       version: updater.currentVersion(),
       autoUpdateCheck: cfg.autoUpdateCheck !== false,
       hasUpdateToken: !!cfg.keys.ghupdate,
@@ -225,6 +226,9 @@ async function handleApi(req, res, url) {
         .slice(0, 100);
     }
     if (typeof body.autoUpdateCheck === 'boolean') cfg.autoUpdateCheck = body.autoUpdateCheck;
+    if (Array.isArray(body.fallbackChain)) {
+      cfg.fallbackChain = body.fallbackChain.map(s => String(s).trim()).filter(s => s.includes(':')).slice(0, 10);
+    }
     if (typeof body.lanPassword === 'string' && body.lanPassword) {
       if (body.lanPassword === '-') { cfg.lanPasswordHash = ''; cfg.lanHost = false; }
       else cfg.lanPasswordHash = sha256(body.lanPassword);
@@ -687,11 +691,60 @@ async function generateImageTool(args, cfg) {
   }
 }
 
+// Un error es "recuperable" (merece reintentar con otro proveedor) si es por
+// límite de tasa, cuota o sobrecarga temporal; NO por auth o petición inválida.
+function isRecoverableError(msg) {
+  const m = String(msg || '');
+  if (/HTTP (429|402|503|500|529|420)\b/.test(m)) return true;
+  if (/\b(401|403|400|404)\b/.test(m)) return false;
+  return /rate.?limit|quota|exceeded|overloaded|capacity|too many requests|insufficient|try again/i.test(m);
+}
+
+// Lista de candidatos: el elegido + la cadena de reserva (config.fallbackChain,
+// entradas "proveedor:modelo"), deduplicada y con proveedores válidos.
+function buildCandidates(provider, model, cfg) {
+  const out = [{ provider, model }];
+  const seen = new Set([provider + ':' + model]);
+  for (const spec of cfg.fallbackChain || []) {
+    const i = String(spec).indexOf(':');
+    if (i < 0) continue;
+    const p = spec.slice(0, i).trim();
+    const md = spec.slice(i + 1).trim();
+    if (!p || !md || !providers.REGISTRY[p] || seen.has(p + ':' + md)) continue;
+    seen.add(p + ':' + md);
+    out.push({ provider: p, model: md });
+  }
+  return out;
+}
+
+// Envuelve chatStream probando los candidatos: si uno falla con error
+// recuperable ANTES de emitir texto/herramientas, pasa al siguiente. Una vez
+// que un proveedor produce algo, se usa ese hasta el final del turno.
+async function* streamWithFallback(candidates, opts, res) {
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    if (i > 0) sse(res, { type: 'fallback', provider: c.provider, model: c.model });
+    const stream = providers.chatStream({ ...opts, providerId: c.provider, model: c.model });
+    let produced = false;
+    let earlyError = null;
+    for await (const ev of stream) {
+      if (ev.type === 'error' && !produced) { earlyError = ev; break; }
+      produced = true;
+      yield ev;
+    }
+    if (!earlyError) return; // el proveedor respondió (bien o con error tardío ya emitido)
+    if (i < candidates.length - 1 && isRecoverableError(earlyError.message)) continue; // probar siguiente
+    yield earlyError; // sin más candidatos o error no recuperable
+    return;
+  }
+}
+
 async function chatHandler(req, res, body, cfg) {
   const { provider, model, messages, agentMode } = body;
   if (!provider || !model || !Array.isArray(messages)) {
     return json(res, 400, { error: 'Faltan provider, model o messages' });
   }
+  const candidates = buildCandidates(provider, model, cfg);
 
   sseStart(res);
   let aborted = false;
@@ -759,15 +812,15 @@ async function chatHandler(req, res, body, cfg) {
       // en mitad de la conversación
       const tools = agentMode ? [...agent.TOOLS, ...mcp.MANAGEMENT_TOOLS, ...mcp.getTools()] : null;
 
-      const stream = providers.chatStream({
-        providerId: provider, model, messages: media.resolveMessages(msgs), tools,
-        temperature: cfg.temperature, cfg
-      });
+      const stream = streamWithFallback(candidates, {
+        messages: media.resolveMessages(msgs), tools, temperature: cfg.temperature, cfg
+      }, res);
 
       for await (const ev of stream) {
         if (aborted) break;
         if (ev.type === 'text') { text += ev.text; sse(res, ev); }
         else if (ev.type === 'tool_calls') calls = ev.calls;
+        else if (ev.type === 'fallback') sse(res, ev); // aviso: cambio de proveedor
         else if (ev.type === 'error') {
           sse(res, ev);
           sse(res, { type: 'done', messages: newMessages });

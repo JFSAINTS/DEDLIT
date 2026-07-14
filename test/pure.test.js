@@ -136,6 +136,21 @@ test('highlightCode: no colorea keywords en strings y escapa HTML', () => {
   assert.match(xss, /&lt;img/);
 });
 
+// ---------- clasificación de errores para el fallback (misma lógica que server.js) ----------
+test('isRecoverableError distingue cuota/tasa de auth/petición', () => {
+  const isRecoverableError = msg => {
+    const m = String(msg || '');
+    if (/HTTP (429|402|503|500|529|420)\b/.test(m)) return true;
+    if (/\b(401|403|400|404)\b/.test(m)) return false;
+    return /rate.?limit|quota|exceeded|overloaded|capacity|too many requests|insufficient|try again/i.test(m);
+  };
+  assert.equal(isRecoverableError('HTTP 429: Too Many Requests'), true);
+  assert.equal(isRecoverableError('HTTP 503: overloaded'), true);
+  assert.equal(isRecoverableError('quota exceeded for today'), true);
+  assert.equal(isRecoverableError('HTTP 401: invalid api key'), false); // auth: no reintentar
+  assert.equal(isRecoverableError('HTTP 400: bad request'), false);
+});
+
 // ---------- estimación de tokens y coste (misma lógica que public/app.js) ----------
 test('estimación de tokens (~4 car./token) y coste input/output', () => {
   const estimateTokens = c => Math.ceil((typeof c === 'string' ? c.length : 0) / 4);
