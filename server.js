@@ -18,6 +18,7 @@ const chats = require('./lib/chats');
 const rag = require('./lib/rag');
 const updater = require('./lib/updater');
 const selfsigned = require('./lib/selfsigned');
+const sdmanager = require('./lib/sdmanager');
 
 const PORT = Number(process.env.DEDLIT_PORT || 8642);
 const PUBLIC = path.join(__dirname, 'public');
@@ -170,6 +171,8 @@ async function handleApi(req, res, url) {
       lmstudioModelsDir: cfg.lmstudioModelsDir || '',
       lmstudioModelsDirDefault: path.join(require('os').homedir(), '.lmstudio', 'models'),
       sdWebuiUrl: cfg.sdWebuiUrl || 'http://127.0.0.1:7860',
+      sdWebuiPath: cfg.sdWebuiPath || '',
+      sdWebuiPathDefault: sdmanager.sdDir({ sdWebuiPath: '' }),
       comfyUrl: cfg.comfyUrl || 'http://127.0.0.1:8188',
       sttUrl: cfg.sttUrl || '',
       ttsUrl: cfg.ttsUrl || '',
@@ -216,6 +219,7 @@ async function handleApi(req, res, url) {
     }
     if (typeof body.lmstudioModelsDir === 'string') cfg.lmstudioModelsDir = body.lmstudioModelsDir.trim();
     if (typeof body.sdWebuiUrl === 'string') cfg.sdWebuiUrl = body.sdWebuiUrl.trim() || 'http://127.0.0.1:7860';
+    if (typeof body.sdWebuiPath === 'string') cfg.sdWebuiPath = body.sdWebuiPath.trim();
     if (typeof body.comfyUrl === 'string') cfg.comfyUrl = body.comfyUrl.trim() || 'http://127.0.0.1:8188';
     if (typeof body.sttUrl === 'string') cfg.sttUrl = body.sttUrl.trim();
     if (typeof body.ttsUrl === 'string') cfg.ttsUrl = body.ttsUrl.trim();
@@ -464,6 +468,7 @@ async function handleApi(req, res, url) {
       providers.sdCheck(cfg),
       providers.comfyCheck(cfg)
     ]);
+    sd.installed = sdmanager.installState(cfg).installed; // instalado (aunque no esté corriendo)
     return json(res, 200, { ollama, lmstudio, sd, comfy });
   }
 
@@ -503,6 +508,27 @@ async function handleApi(req, res, url) {
 
   // Generar imagen: Stable Diffusion local o nube (OpenAI, xAI, Zhipu),
   // con selección automática si el proveedor actual no genera imágenes
+  // Instalar Stable Diffusion WebUI (git clone; SSE con la salida)
+  if (url.pathname === '/api/sd/install' && req.method === 'POST') {
+    sseStart(res);
+    try {
+      const r = await sdmanager.install(cfg, line => sse(res, { type: 'log', line }));
+      sse(res, { type: 'done', dir: r.dir, note: 'Descargado. Pulsa «Lanzar» para el primer arranque (instalará Python/torch y un modelo; tarda).' });
+    } catch (err) {
+      sse(res, { type: 'error', message: err.message });
+    }
+    return res.end();
+  }
+  // Lanzar Stable Diffusion (con --api)
+  if (url.pathname === '/api/sd/launch' && req.method === 'POST') {
+    try {
+      const r = sdmanager.launch(cfg);
+      return json(res, 200, { ok: true, dir: r.dir });
+    } catch (err) {
+      return json(res, 400, { error: err.message });
+    }
+  }
+
   if (url.pathname === '/api/generate/image' && req.method === 'POST') {
     const { provider, model, prompt } = await readBody(req);
     try {

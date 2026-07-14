@@ -153,6 +153,8 @@ Según las capacidades del modelo cargado (se muestran como chips bajo el select
 **Generación** — selector de modo junto al campo de texto:
 
 - 🖼️ **Generar imagen**: si tienes **Stable Diffusion local** (Automatic1111/SD.Next/Forge arrancado con `--api`; URL en Ajustes) se usa automáticamente — gratis y 100% privado. Si no, `gpt-image-1`/`dall-e-3` (OpenAI), `grok-2-image` (xAI) o `cogview-4` (Zhipu) con key.
+
+  ¿No lo tienes instalado? En la barra lateral, junto a *Stable Diffusion*, aparece un botón **⬇ Instalar** (clona Automatic1111 en `~/.dedlit`; requiere `git` y Python 3.10+, y el primer arranque descarga varios GB) y, cuando ya está instalado pero apagado, **▶ Lanzar** (lo arranca con `--api` y espera a que esté listo). La carpeta de instalación es configurable en Ajustes.
 - 🔊 **Generar voz (TTS)**: `tts-1`, `gpt-4o-mini-tts`… (campo de voz configurable: alloy, echo, nova…).
 - 📝 **Transcribir audio**: adjunta un audio y usa `whisper-1` / `gpt-4o-transcribe`.
 

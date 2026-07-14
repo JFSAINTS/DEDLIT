@@ -48,7 +48,9 @@
         <label>Servidores locales</label>
         <div class="status-row"><span class="dot" id="dot-ollama"></span> Ollama <span class="status-detail" id="detail-ollama"></span></div>
         <div class="status-row"><span class="dot" id="dot-lmstudio"></span> LM Studio <span class="status-detail" id="detail-lmstudio"></span></div>
-        <div class="status-row" title="Automatic1111/SD.Next/Forge con --api: generación de imágenes local y gratuita"><span class="dot" id="dot-sd"></span> Stable Diffusion <span class="status-detail" id="detail-sd"></span></div>
+        <div class="status-row" title="Automatic1111/SD.Next/Forge con --api: generación de imágenes local y gratuita"><span class="dot" id="dot-sd"></span> Stable Diffusion <span class="status-detail" id="detail-sd"></span>
+          <button id="btn-sd-action" class="mini hidden" title="Instalar o lanzar Stable Diffusion"></button>
+        </div>
         <div class="status-row" title="ComfyUI: backend alternativo de imágenes local"><span class="dot" id="dot-comfy"></span> ComfyUI <span class="status-detail" id="detail-comfy"></span></div>
       </div>
 
@@ -274,6 +276,8 @@
         <h3>Stable Diffusion local</h3>
         <input type="text" id="cfg-sdurl" placeholder="http://127.0.0.1:7860">
         <p class="hint">URL de Automatic1111 / SD.Next / Forge (arráncalo con <code>--api</code>). Si está activo, la generación de imágenes lo usa automáticamente: gratis y 100% privada.</p>
+        <input type="text" id="cfg-sdpath" placeholder="">
+        <p class="hint">Carpeta de instalación de SD WebUI (para los botones <b>Instalar/Lanzar</b> de la barra lateral). Vacío = se instala en la carpeta por defecto. Si ya lo tienes, indica aquí su ruta.</p>
 
         <h3>ComfyUI local</h3>
         <input type="text" id="cfg-comfy" placeholder="http://127.0.0.1:8188">

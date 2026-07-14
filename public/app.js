@@ -988,7 +988,71 @@ async function refreshLocalStatus() {
       dot.className = 'dot ' + (st[id].online ? 'on' : 'off');
       detail.textContent = st[id].online ? (st[id].models?.length || 0) + ' modelos' : 'apagado';
     }
+    // Botón de acción de Stable Diffusion: instalar / lanzar / (nada si corre)
+    const btn = $('btn-sd-action');
+    if (btn && !sdBusy) {
+      if (st.sd?.online) { btn.classList.add('hidden'); }
+      else if (st.sd?.installed) { btn.textContent = '▶ Lanzar'; btn.dataset.act = 'launch'; btn.classList.remove('hidden'); }
+      else { btn.textContent = '⬇ Instalar'; btn.dataset.act = 'install'; btn.classList.remove('hidden'); }
+    }
   } catch { /* servidor reiniciándose */ }
+}
+
+let sdBusy = false;
+
+async function sdAction() {
+  const btn = $('btn-sd-action');
+  const detail = $('detail-sd');
+  if (btn.dataset.act === 'launch') {
+    sdBusy = true;
+    btn.classList.add('hidden');
+    detail.textContent = 'lanzando…';
+    try {
+      const r = await (await fetch('/api/sd/launch', { method: 'POST' })).json();
+      if (r.error) throw new Error(r.error);
+      detail.textContent = 'arrancando (puede tardar)…';
+      // sondear hasta que el API responda (o rendirse a los ~5 min)
+      let tries = 0;
+      const poll = setInterval(async () => {
+        tries++;
+        try { const s = await (await fetch('/api/status')).json();
+          if (s.sd?.online) { clearInterval(poll); sdBusy = false; refreshLocalStatus(); } } catch {}
+        if (tries > 150) { clearInterval(poll); sdBusy = false; }
+      }, 2000);
+    } catch (err) { alert('No se pudo lanzar: ' + err.message); sdBusy = false; refreshLocalStatus(); }
+    return;
+  }
+  // instalar
+  if (!confirm('Se descargará Stable Diffusion WebUI (Automatic1111) en tu equipo.\n\nRequisitos: git y Python 3.10+. El primer arranque descargará varios GB (torch + un modelo) y tardará bastante.\n\n¿Continuar?')) return;
+  sdBusy = true;
+  btn.classList.add('hidden');
+  detail.textContent = 'instalando…';
+  try {
+    const res = await fetch('/api/sd/install', { method: 'POST' });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, i).split('\n').find(l => l.startsWith('data: '));
+        buf = buf.slice(i + 2);
+        if (!line) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === 'log') { const t = ev.line.trim().split('\n').pop(); if (t) detail.textContent = t.slice(0, 22); }
+        else if (ev.type === 'done') detail.textContent = 'instalado ✓';
+        else if (ev.type === 'error') throw new Error(ev.message);
+      }
+    }
+  } catch (err) {
+    alert('Instalación de Stable Diffusion: ' + err.message);
+  } finally {
+    sdBusy = false;
+    refreshLocalStatus();
+  }
 }
 
 // ---------- Modal de ajustes ----------
@@ -1035,6 +1099,8 @@ function openSettings() {
   $('cfg-lmdir').value = c.lmstudioModelsDir || '';
   $('cfg-lmdir').placeholder = c.lmstudioModelsDirDefault || '~/.lmstudio/models';
   $('cfg-sdurl').value = c.sdWebuiUrl || '';
+  $('cfg-sdpath').value = c.sdWebuiPath || '';
+  $('cfg-sdpath').placeholder = c.sdWebuiPathDefault || '';
   $('cfg-comfy').value = c.comfyUrl || '';
   $('cfg-stt').value = c.sttUrl || '';
   $('cfg-tts').value = c.ttsUrl || '';
@@ -1107,6 +1173,7 @@ async function saveSettings() {
         lanPassword: $('cfg-lanpass').value.trim() || undefined,
         lmstudioModelsDir: $('cfg-lmdir').value.trim(),
         sdWebuiUrl: $('cfg-sdurl').value.trim(),
+        sdWebuiPath: $('cfg-sdpath').value.trim(),
         comfyUrl: $('cfg-comfy').value.trim(),
         sttUrl: $('cfg-stt').value.trim(),
         ttsUrl: $('cfg-tts').value.trim(),
@@ -1678,6 +1745,7 @@ $('btn-theme').onclick = toggleTheme;
 function openDrawer() { $('app').classList.add('drawer-open'); $('sidebar-backdrop').classList.remove('hidden'); }
 function closeDrawer() { $('app').classList.remove('drawer-open'); $('sidebar-backdrop').classList.add('hidden'); }
 $('btn-hamburger').onclick = openDrawer;
+$('btn-sd-action').onclick = sdAction;
 
 // Copiar bloques de código (delegación)
 $('messages').addEventListener('click', e => {
