@@ -78,7 +78,7 @@ test('extractText despacha por extensión (txt/pdf/docx)', () => {
 });
 
 // --- indexado + búsqueda con embeddings simulados (bolsa de palabras) ---
-let mock, base;
+let mock, base, embedTexts = 0;
 before(async () => {
   mock = http.createServer((req, res) => {
     let body = '';
@@ -86,6 +86,7 @@ before(async () => {
     req.on('end', () => {
       const { input } = JSON.parse(body);
       const texts = Array.isArray(input) ? input : [input];
+      embedTexts += texts.length; // contar cuántos textos se embeben
       const embed = t => {
         const v = new Array(64).fill(0);
         for (const w of String(t).toLowerCase().match(/[a-záéíóúñ0-9]+/g) || []) {
@@ -116,4 +117,35 @@ test('buildIndex indexa la carpeta y search recupera el documento correcto', asy
   const hits = await rag.search('col1', 'cual es la clave secreta del proyecto', cfg, 3);
   assert.equal(hits[0].file, 'manual.pdf'); // el fragmento más afín viene del PDF
   assert.ok(hits[0].score > 0);
+});
+
+test('reindexado incremental reutiliza embeddings sin cambios y solo procesa lo modificado', async () => {
+  const cfg = configLib.load();
+  // indexado completo
+  embedTexts = 0;
+  await rag.buildIndex({ id: 'col2', name: 'Inc', folder: docsDir, provider: 'lmstudio', model: 'mock-embed', cfg });
+  const trasCompleto = embedTexts;
+  assert.ok(trasCompleto >= 3);
+
+  // reindexar sin tocar nada → 0 textos nuevos
+  embedTexts = 0;
+  let prev = rag.get('col2');
+  const r1 = await rag.buildIndex({ id: 'col2', name: 'Inc', folder: docsDir, provider: 'lmstudio', model: 'mock-embed', cfg, prev });
+  assert.equal(embedTexts, 0);          // no recalculó nada
+  assert.equal(r1.changed, 0);
+  assert.equal(r1.unchanged, 3);
+
+  // modificar un archivo → solo ese se re-embebe
+  await new Promise(r => setTimeout(r, 10));
+  fs.writeFileSync(path.join(docsDir, 'nota.txt'), 'El servidor ahora se llama BOREAS en el puerto 7000 con contenido nuevo distinto.');
+  embedTexts = 0;
+  prev = rag.get('col2');
+  const r2 = await rag.buildIndex({ id: 'col2', name: 'Inc', folder: docsDir, provider: 'lmstudio', model: 'mock-embed', cfg, prev });
+  assert.ok(embedTexts >= 1 && embedTexts < trasCompleto); // solo el archivo cambiado
+  assert.equal(r2.changed, 1);
+  assert.equal(r2.unchanged, 2);
+
+  // el índice refleja el contenido nuevo
+  const hits = await rag.search('col2', 'como se llama ahora el servidor BOREAS', cfg, 1);
+  assert.match(hits[0].text, /BOREAS/);
 });

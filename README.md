@@ -70,6 +70,8 @@ Con el botón **🛠** de la sección *📚 Documentos* indexas cualquier carpet
 
 Después, elige la colección en el selector de la barra lateral y el modelo responderá usando los fragmentos más afines como contexto, **citando el archivo**. El agente además tiene la herramienta `search_docs` para consultar tus colecciones cuando lo necesite.
 
+Cuando cambies documentos de la carpeta, pulsa **↻ reindexar** en la colección: el reindexado es **incremental** — reutiliza los embeddings de los archivos que no han cambiado (por fecha y tamaño) y solo procesa los nuevos o modificados, así que es casi instantáneo salvo por lo que realmente cambió.
+
 ## Voz local (opcional)
 
 En Ajustes puedes configurar servidores locales OpenAI-compatibles para **📝 transcripción** (whisper.cpp `server`, faster-whisper-server) y **🔊 texto a voz** (kokoro-fastapi, openedai-speech). Si están configurados tienen prioridad sobre la nube: voz completamente privada y gratuita.

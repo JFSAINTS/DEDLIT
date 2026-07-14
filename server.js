@@ -319,14 +319,21 @@ async function handleApi(req, res, url) {
     return json(res, 200, { collections: rag.list() });
   }
   if (url.pathname === '/api/rag/index' && req.method === 'POST') {
-    const { name, folder, provider, model } = await readBody(req);
+    const body = await readBody(req);
+    // Reindexado incremental: si llega un id existente, se reutiliza esa
+    // colección (carpeta/proveedor/modelo) y solo se procesa lo cambiado.
+    const prev = body.id ? rag.get(body.id) : null;
+    const name = body.name || (prev && prev.name);
+    const folder = body.folder || (prev && prev.folder);
+    const provider = body.provider || (prev && prev.provider);
+    const model = body.model || (prev && prev.model);
     if (!name || !folder || !provider || !model) {
       return json(res, 400, { error: 'Faltan name, folder, provider o model' });
     }
     sseStart(res);
     try {
       const result = await rag.buildIndex({
-        id: Date.now().toString(36), name, folder, provider, model, cfg,
+        id: (prev && prev.id) || Date.now().toString(36), name, folder, provider, model, cfg, prev,
         onProgress: (done, total) => sse(res, { type: 'progress', done, total })
       });
       sse(res, { type: 'done', ...result });

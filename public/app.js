@@ -1432,9 +1432,15 @@ function renderDocsList(collections) {
     div.innerHTML = `
       <div class="pname">📚 ${escapeHtml(c.name)}
         <span class="badge local">${c.chunks} fragmentos · ${c.files} archivos</span>
-        <span class="key-link" style="margin-left:auto"><a href="#" data-del="${c.id}">eliminar</a></span>
+        <span class="key-link" style="margin-left:auto"><a href="#" data-reindex="${c.id}">↻ reindexar</a> · <a href="#" data-del="${c.id}">eliminar</a></span>
       </div>
-      <p class="hint">${escapeHtml(c.folder)} — embeddings: ${escapeHtml(c.provider)}:${escapeHtml(c.model)}</p>`;
+      <p class="hint">${escapeHtml(c.folder)} — embeddings: ${escapeHtml(c.provider)}:${escapeHtml(c.model)}</p>
+      <div class="hint" data-prog="${c.id}"></div>`;
+    div.querySelector('[data-reindex]').onclick = async e => {
+      e.preventDefault();
+      await runIndex({ id: c.id }, div.querySelector('[data-prog]'));
+      renderDocsList(await loadRagCollections());
+    };
     div.querySelector('[data-del]').onclick = async e => {
       e.preventDefault();
       await fetch('/api/rag/' + c.id, { method: 'DELETE' });
@@ -1444,20 +1450,15 @@ function renderDocsList(collections) {
   }
 }
 
-async function indexDocs() {
-  const name = $('docs-name').value.trim();
-  const folder = $('docs-folder').value.trim();
-  const provider = $('docs-provider').value;
-  const model = $('docs-model').value.trim();
-  const prog = $('docs-progress');
-  if (!name || !folder || !model) { alert('Rellena nombre, carpeta y modelo de embeddings.'); return; }
-  const btn = $('btn-docs-index');
-  btn.disabled = true;
-  prog.textContent = 'Escaneando y extrayendo texto…';
+// Lanza indexado/reindexado (SSE). `body` con {name,folder,provider,model}
+// para una colección nueva, o {id} para reindexar (incremental). `prog` es el
+// elemento donde mostrar el progreso.
+async function runIndex(body, prog) {
+  prog.textContent = body.id ? 'Comparando archivos…' : 'Escaneando y extrayendo texto…';
   try {
     const res = await fetch('/api/rag/index', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, folder, provider, model })
+      body: JSON.stringify(body)
     });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -1472,19 +1473,32 @@ async function indexDocs() {
         buf = buf.slice(i + 2);
         if (!line) continue;
         const ev = JSON.parse(line.slice(6));
-        if (ev.type === 'progress') prog.textContent = `Calculando embeddings… ${ev.done}/${ev.total} fragmentos`;
-        else if (ev.type === 'done') {
-          prog.textContent = `✓ "${ev.name}" indexada: ${ev.files} archivos, ${ev.chunks} fragmentos.`;
-          $('docs-name').value = ''; $('docs-folder').value = '';
-          renderDocsList(await loadRagCollections());
+        if (ev.type === 'progress') {
+          prog.textContent = ev.total ? `Calculando embeddings… ${ev.done}/${ev.total} fragmentos nuevos` : 'Sin cambios que procesar…';
+        } else if (ev.type === 'done') {
+          const extra = ev.unchanged != null ? ` (${ev.changed} nuevos/modificados, ${ev.unchanged} sin cambios)` : '';
+          prog.textContent = `✓ "${ev.name}": ${ev.files} archivos, ${ev.chunks} fragmentos${extra}.`;
         } else if (ev.type === 'error') throw new Error(ev.message);
       }
     }
+    return true;
   } catch (err) {
     prog.textContent = '⚠ ' + err.message;
-  } finally {
-    btn.disabled = false;
+    return false;
   }
+}
+
+async function indexDocs() {
+  const name = $('docs-name').value.trim();
+  const folder = $('docs-folder').value.trim();
+  const provider = $('docs-provider').value;
+  const model = $('docs-model').value.trim();
+  if (!name || !folder || !model) { alert('Rellena nombre, carpeta y modelo de embeddings.'); return; }
+  const btn = $('btn-docs-index');
+  btn.disabled = true;
+  const ok = await runIndex({ name, folder, provider, model }, $('docs-progress'));
+  if (ok) { $('docs-name').value = ''; $('docs-folder').value = ''; renderDocsList(await loadRagCollections()); }
+  btn.disabled = false;
 }
 
 // ---------- Buscador de modelos (Hugging Face) ----------

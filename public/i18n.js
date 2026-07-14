@@ -89,6 +89,8 @@ const I18N = {
     '📚 Documentos (RAG local)': '📚 Documents (local RAG)',
     'Nueva colección': 'New collection',
     'Indexar carpeta': 'Index folder',
+    '↻ reindexar': '↻ reindex',
+    'eliminar': 'delete',
     '🧲 Buscador de modelos (Hugging Face)': '🧲 Model browser (Hugging Face)',
     'Buscar': 'Search',
     '🎁 APIs de IA gratuitas': '🎁 Free AI APIs',
