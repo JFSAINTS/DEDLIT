@@ -446,7 +446,9 @@ function renderMessages() {
     }
     else if (m.role === 'assistant') {
       if (m.content && (!Array.isArray(m.content) || m.content.length)) {
-        cont.appendChild(msgEl('assistant', renderParts(m.content), m.label));
+        const el = msgEl('assistant', renderParts(m.content), m.label);
+        addForkButton(el, idx);
+        cont.appendChild(el);
       }
       for (const tc of m.tool_calls || []) {
         let args = {};
@@ -479,6 +481,33 @@ function addEditButton(el, msgIndex) {
   btn.title = 'Editar y reenviar desde aquí';
   el.querySelector('.role-name').appendChild(btn);
   btn.onclick = () => startEditMessage(el, msgIndex);
+}
+
+function addForkButton(el, msgIndex) {
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.textContent = '⑂';
+  btn.title = 'Bifurcar: nueva conversación con el historial hasta aquí';
+  el.querySelector('.role-name').appendChild(btn);
+  btn.onclick = () => forkChat(msgIndex);
+}
+
+// Crea una rama: copia el chat hasta el mensaje idx (incluido) en uno nuevo
+function forkChat(idx) {
+  if (state.streaming) return;
+  const src = state.currentChat;
+  const fork = {
+    id: Date.now().toString(36),
+    title: (src.title || 'Conversación').replace(/ \(rama( \d+)?\)$/, '') + ' (rama)',
+    messages: JSON.parse(JSON.stringify(src.messages.slice(0, idx + 1))),
+    createdAt: Date.now(),
+    projectId: src.projectId || '',
+    settings: src.settings ? { ...src.settings } : undefined
+  };
+  state.currentChat = fork;
+  saveChats();
+  renderChatList();
+  renderMessages();
 }
 
 function startEditMessage(el, idx) {

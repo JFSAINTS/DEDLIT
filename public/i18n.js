@@ -41,6 +41,7 @@ const I18N = {
     'Copiar': 'Copy',
     'Tokens estimados y coste aproximado de esta conversación': 'Estimated tokens and approximate cost of this conversation',
     'Editar y reenviar desde aquí': 'Edit and resend from here',
+    'Bifurcar: nueva conversación con el historial hasta aquí': 'Branch: new conversation with the history up to here',
     'Tú': 'You',
     // Bienvenida
     'Tu frontend local y privado de IA. Selecciona un proveedor y un modelo en la barra lateral.': 'Your local, private AI frontend. Pick a provider and model in the sidebar.',

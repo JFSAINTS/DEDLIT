@@ -86,6 +86,7 @@ El botón **🎁 APIs gratis** de la barra lateral resume los servicios con nive
 - Las conversaciones se guardan **en tu disco** (`%USERPROFILE%\.dedlit\chats`) — se comparten entre navegadores, sobreviven a limpiezas y nunca salen de tu equipo. Puedes **buscar** en todo el historial desde la barra lateral y **exportar** cualquier chat a Markdown o JSON desde la barra superior, donde también puedes **↻ regenerar** la última respuesta.
 - En Ajustes puedes definir **instrucciones personalizadas** (p. ej. "responde siempre en español, sé conciso") que se aplican a todas tus conversaciones.
 - Cada chat **recuerda su configuración** (proveedor, modelo, modo agente y colección RAG): al reabrirlo se restaura todo.
+- **⑂ Bifurcar** cualquier respuesta: crea una conversación nueva con el historial hasta ese punto, para explorar caminos distintos sin perder el original.
 - **📋 Plantillas de prompts** reutilizables con huecos `{{campo}}` que se rellenan al usarlas.
 - **Atajos**: `Ctrl+K` buscar en el historial, `Ctrl+Shift+O` nuevo chat, `Ctrl+,` ajustes, `Alt+A` modo agente, `Esc` cerrar ventanas.
 - **Tema claro/oscuro** con el botón 🌗 de la barra lateral (se recuerda tu elección).
@@ -174,6 +175,18 @@ Todos los archivos (adjuntos y generados) se guardan **en tu disco** en `%USERPR
        model: ollama:llama3.1
    ```
 
+## Docker (NAS / servidor casero 24/7)
+
+```bash
+docker build -t dedlit-studio .
+docker run -d --name dedlit \
+  -p 8642:8642 -p 8643:8643 \
+  -v dedlit-data:/root/.dedlit \
+  dedlit-studio
+```
+
+El volumen `dedlit-data` conserva tu configuración, historial, colecciones RAG y medios entre reinicios. **Para acceder desde otros equipos** (el contenedor está aislado del host por red), entra una vez en `http://127.0.0.1:8642` y activa en Ajustes el **acceso remoto con contraseña** (opcionalmente HTTPS): así DEDLIT pasa a escuchar en `0.0.0.0` y el mapeo `-p` funciona. Sin contraseña sigue siendo solo-local por seguridad, como en el resto de la app.
+
 ## Estructura
 
 ```
@@ -182,7 +195,9 @@ lib/config.js      Configuración y cifrado de keys
 lib/providers.js   Adaptadores (OpenAI-compatible y Anthropic nativo)
 lib/agent.js       Herramientas del agente y prompt de sistema
 lib/media.js       Almacén local de imágenes/audio/vídeo
+lib/selfsigned.js  Certificado autofirmado para HTTPS de acceso LAN
 public/            Interfaz web (HTML/CSS/JS puro)
+Dockerfile         Imagen para servidor 24/7
 ```
 
 ## Compilar los ejecutables
