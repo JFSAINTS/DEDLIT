@@ -204,7 +204,7 @@
         <button id="btn-rec" title="Grabar la vista en vídeo (webm)">⏺ Grabar</button>
       </div>
 
-      <p class="hint" style="margin-top:10px">Para el restilizado IA arranca Stable Diffusion WebUI (Automatic1111 / SD.Next / Forge) con
+      <p class="hint" style="margin-top:10px" id="setup-hint">Para el restilizado IA arranca Stable Diffusion WebUI (Automatic1111 / SD.Next / Forge) con
       <code>--api --cors-allow-origins=*</code>. Los efectos y filtros funcionan siempre, sin nada más. Nada sale de tu equipo.</p>
     </div>
 
@@ -401,32 +401,56 @@ const app = {
   vt: { idle: null, talk: null, talking: false, level: 0, smooth: 0, analyser: null, micData: null, bgImg: null }
 };
 
-// ---------- API directa de Stable Diffusion ----------
+// ---------- API de Stable Diffusion ----------
+// Directa (requiere --cors-allow-origins=* en A1111) o, si la página la sirve
+// el lanzador de escritorio (webcam-launcher.js), a través de su proxy
+// /sdproxy — mismo origen, sin flags CORS. Se detecta al arrancar.
+
+let sdProxy = false;
 
 function sdUrl() {
   return ($('sd-url').value.trim() || 'http://127.0.0.1:7860').replace(/\/+$/, '');
+}
+
+async function detectProxy() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const r = await fetch('/sdproxy/ping', { signal: AbortSignal.timeout(1500) });
+    sdProxy = r.ok || r.status === 204;
+  } catch { sdProxy = false; }
 }
 
 async function sdFetch(path, opts, timeoutMs) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs || 120000);
   try {
+    if (sdProxy) {
+      const headers = { ...(opts && opts.headers), 'x-sd-url': sdUrl() };
+      return await fetch('/sdproxy' + path, { ...opts, headers, signal: controller.signal });
+    }
     return await fetch(sdUrl() + path, { ...opts, signal: controller.signal });
   } finally {
     clearTimeout(t);
   }
 }
 
+let checkSeq = 0; // descarta resultados de comprobaciones obsoletas (p. ej.
+                  // si el usuario cambia la URL mientras otra sigue en vuelo)
 async function checkBackend() {
+  const seq = ++checkSeq;
   const el = $('backend');
   el.textContent = '⏳ detectando…';
-  app.ai.online = false;
-  app.ai.ipAdapter = null;
+  // ojo: no resetear app.ai.online aquí — el estado anterior sigue siendo el
+  // mejor conocido mientras la comprobación está en vuelo (p. ej. el blur del
+  // campo URL relanza la comprobación justo antes del click en un preset)
+  let online = false;
+  let ipAdapter = null;
+  let label;
   try {
     const r = await sdFetch('/sdapi/v1/sd-models', {}, 2500);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     await r.json();
-    app.ai.online = true;
+    online = true;
     try {
       const m = await sdFetch('/controlnet/model_list', {}, 2500);
       if (m.ok) {
@@ -437,14 +461,18 @@ async function checkBackend() {
             const mod = await sdFetch('/controlnet/module_list', {}, 2500);
             if (mod.ok) module = ((await mod.json()).module_list || []).find(x => /^ip.?adapter/i.test(x)) || module;
           } catch { /* módulo por defecto */ }
-          app.ai.ipAdapter = { module, model };
+          ipAdapter = { module, model };
         }
       }
     } catch { /* sin ControlNet */ }
-    el.textContent = '🟢 Stable Diffusion' + (app.ai.ipAdapter ? ' · IP-Adapter ✓' : '');
+    label = '🟢 Stable Diffusion' + (ipAdapter ? ' · IP-Adapter ✓' : '');
   } catch {
-    el.textContent = '🔴 SD no responde (solo efectos)';
+    label = '🔴 SD no responde (solo efectos)';
   }
+  if (seq !== checkSeq) return; // llegó tarde: hay una comprobación más nueva
+  app.ai.online = online;
+  app.ai.ipAdapter = ipAdapter;
+  el.textContent = label;
   updateRefHint();
 }
 
@@ -1108,6 +1136,10 @@ $('btn-vt-rec').onclick = () => toggleRec($('btn-vt-rec'));
   renderSkins();
   renderFilters();
   syncFilterControls();
+  await detectProxy();
+  if (sdProxy) {
+    $('setup-hint').innerHTML = 'Para el restilizado IA arranca Stable Diffusion WebUI (Automatic1111 / SD.Next / Forge) con <code>--api</code> — sin flags CORS: el lanzador hace de proxy. Los efectos y filtros funcionan siempre, sin nada más. Nada sale de tu equipo.';
+  }
   checkBackend();
   try {
     initGl();

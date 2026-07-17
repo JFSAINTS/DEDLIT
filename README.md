@@ -191,6 +191,8 @@ Botón **🎥 Cámara IA** en la barra lateral: abre tu webcam y aplica, en loca
 
 Los efectos en tiempo real, el creador de filtros y el modo VTuber funcionan **sin nada más**; solo el restilizado IA necesita Stable Diffusion. Todo (skins, filtros, URL de SD) persiste en `localStorage` y nada sale de tu equipo.
 
+**App para Windows (`dedlit-webcam.exe`)** — la forma más cómoda: descarga `dedlit-webcam.exe` de las [releases](https://github.com/JFSAINTS/DEDLIT/releases) (o compílalo con `npm run build:webcam`), haz doble clic y se abre solo en tu navegador. El lanzador (`standalone/webcam-launcher.js`, cero dependencias) además hace de **proxy hacia la API de Stable Diffusion**, así que basta arrancar A1111 con `--api` a secas — sin flags CORS. Solo escucha en `127.0.0.1` (puerto `DEDLIT_WEBCAM_PORT`, por defecto 8645).
+
 ## Integración con VS Code
 
 1. **Abrir el workspace**: botón *⌨ VS Code* en la barra lateral.
