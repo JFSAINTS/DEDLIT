@@ -304,11 +304,9 @@
         <p class="hint">Lo que no esté marcado te pedirá aprobación en el chat antes de ejecutarse.</p>
 
         <h3>Conectores (MCP) <button id="btn-mcp-reload" class="mini" title="Arrancar/recargar conectores ahora">⟳ probar</button></h3>
-        <p class="hint">DEDLIT es cliente de <b>Model Context Protocol</b>, el estándar de conectores de Claude Desktop: navegador, Canva, GitHub, bases de datos… Mismo formato de configuración. Ejemplos (requieren Node en el PATH); los servidores remotos como Canva abren el navegador la primera vez para autorizar tu cuenta:</p>
-        <pre class="hint" style="background:var(--bg-input);padding:8px 10px;border-radius:8px;overflow-x:auto">{
-  "navegador": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] },
-  "canva": { "command": "npx", "args": ["-y", "mcp-remote", "https://mcp.canva.com/mcp"] }
-}</pre>
+        <p class="hint">DEDLIT es cliente de <b>Model Context Protocol</b>, el estándar de conectores de Claude Desktop. Añade uno recomendado con un clic (se guarda y arranca solo), o edita el JSON a mano abajo:</p>
+        <div id="mcp-catalog"></div>
+        <p class="hint">Configuración (formato de Claude Desktop):</p>
         <textarea id="cfg-mcp" rows="6" spellcheck="false" placeholder='{ }'></textarea>
         <div id="mcp-status"></div>
 

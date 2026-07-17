@@ -1079,6 +1079,83 @@ async function refreshMcpStatus(reload) {
   } catch { /* servidor ocupado */ }
 }
 
+// ---------- Catálogo de conectores recomendados (añadir en 1 clic) ----------
+// `def(cfg)` construye la entrada mcpServers; `hint` avisa de requisitos.
+const MCP_CATALOG = [
+  {
+    id: 'graphify',
+    name: '🕸️ Graphify',
+    desc: 'Mapea tu proyecto (código, docs, PDFs) en un grafo navegable: el agente puede trazar cómo se conecta A con B en vez de leer archivos a ciegas. El código se parsea local con tree-sitter, sin gastar tokens.',
+    hint: 'Requiere Python 3.10+ y: <code>pip install "graphifyy[mcp]"</code>. Genera antes el grafo en tu workspace con <code>graphify extract</code> (o <code>/graphify .</code>).',
+    // barras normales: válidas en Windows y evita escapes en el JSON
+    def: c => ({ command: 'python', args: ['-m', 'graphify.serve', (c.workspace || '.').replace(/\\/g, '/').replace(/\/+$/, '') + '/graphify-out/graph.json'] })
+  },
+  {
+    id: 'navegador',
+    name: '🌐 Navegador (Playwright)',
+    desc: 'Control real de Chrome/Edge: navegar, hacer clic, rellenar formularios y sacar capturas.',
+    hint: 'Requiere Node en el PATH. La primera vez npx descarga el paquete (tarda un poco).',
+    def: () => ({ command: 'npx', args: ['-y', '@playwright/mcp@latest'] })
+  },
+  {
+    id: 'canva',
+    name: '🎨 Canva',
+    desc: 'Crear diseños, rellenar plantillas y exportarlos desde el chat.',
+    hint: 'Requiere Node. Servidor remoto: abre el navegador la primera vez para autorizar tu cuenta de Canva.',
+    def: () => ({ command: 'npx', args: ['-y', 'mcp-remote', 'https://mcp.canva.com/mcp'] })
+  },
+  {
+    id: 'github',
+    name: '🐙 GitHub',
+    desc: 'Issues, pull requests y repositorios desde el agente.',
+    hint: 'Requiere Node y un token de GitHub: sustituye <code>ghp_...</code> en el JSON por el tuyo.',
+    def: () => ({ command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_...' } })
+  }
+];
+
+function renderMcpCatalog() {
+  const cont = $('mcp-catalog');
+  if (!cont) return;
+  let installed = {};
+  try { installed = JSON.parse($('cfg-mcp').value.trim() || '{}'); } catch { /* JSON a medias */ }
+  cont.innerHTML = '';
+  for (const item of MCP_CATALOG) {
+    const yaEsta = !!installed[item.id];
+    const div = document.createElement('div');
+    div.className = 'provider-cfg';
+    div.innerHTML = `
+      <div class="pname">${item.name}
+        ${yaEsta ? '<span class="badge key-ok">añadido</span>' : ''}
+        <span class="key-link" style="margin-left:auto"><a href="#" data-add="${item.id}">${yaEsta ? 'reañadir' : '➕ añadir'}</a></span>
+      </div>
+      <p class="hint">${item.desc}</p>
+      <p class="hint">⚙ ${item.hint}</p>`;
+    div.querySelector('[data-add]').onclick = async e => { e.preventDefault(); await addCatalogConnector(item); };
+    cont.appendChild(div);
+  }
+}
+
+// Añade el conector al JSON, guarda y lo arranca (1 clic)
+async function addCatalogConnector(item) {
+  let cfg = {};
+  try {
+    cfg = JSON.parse($('cfg-mcp').value.trim() || '{}');
+  } catch {
+    alert('El JSON de conectores tiene un error; corrígelo antes de añadir otro.');
+    return;
+  }
+  cfg[item.id] = item.def(state.config || {});
+  $('cfg-mcp').value = JSON.stringify(cfg, null, 2);
+  state.config.mcpServers = cfg;
+  await fetch('/api/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mcpServers: cfg })
+  }).catch(() => {});
+  renderMcpCatalog();
+  $('mcp-status').innerHTML = '<p class="hint">Arrancando «' + escapeHtml(item.id) + '»… (la primera vez puede tardar)</p>';
+  await refreshMcpStatus(true); // arrancar y mostrar estado real
+}
+
 function openSettings() {
   const c = state.config;
   $('cfg-lang').value = dedlitLang();
@@ -1111,6 +1188,7 @@ function openSettings() {
   $('cfg-auto-command').checked = c.autoApprove.command;
   $('cfg-auto-network').checked = !!c.autoApprove.network;
   $('cfg-mcp').value = JSON.stringify(c.mcpServers || {}, null, 2);
+  renderMcpCatalog();
   refreshMcpStatus(false);
   $('cfg-gateway').textContent = c.gatewayUrl;
 

@@ -123,12 +123,23 @@ Cada acción aparece como una tarjeta en el chat con los argumentos exactos; tú
 
 ## Conectores (MCP)
 
-DEDLIT es **cliente de Model Context Protocol**, el estándar de conectores de Claude Desktop / Claude Code, con el mismo formato de configuración. En ⚙ Ajustes → *Conectores (MCP)* pega, por ejemplo:
+DEDLIT es **cliente de Model Context Protocol**, el estándar de conectores de Claude Desktop / Claude Code, con el mismo formato de configuración.
+
+En ⚙ Ajustes → *Conectores (MCP)* tienes un **catálogo con los recomendados**: pulsa **➕ añadir** y DEDLIT lo configura, lo guarda y lo arranca — un clic, sin escribir JSON:
+
+| Conector | Qué aporta | Requisitos |
+|---|---|---|
+| 🕸️ **Graphify** | Mapea tu proyecto (código, docs, PDFs) en un **grafo navegable**: el agente traza cómo se conecta A con B en vez de leer archivos a ciegas. El código se parsea local con tree-sitter, **sin gastar tokens**. | Python 3.10+, `pip install "graphifyy[mcp]"` y generar el grafo con `graphify extract` |
+| 🌐 **Navegador** (Playwright) | Control real de Chrome/Edge: navegar, clic, formularios, capturas | Node |
+| 🎨 **Canva** | Crear diseños, plantillas y exportarlos desde el chat | Node (autoriza tu cuenta al arrancar) |
+| 🐙 **GitHub** | Issues, PRs y repositorios | Node + token de GitHub |
+
+También puedes editar el JSON a mano para cualquier otro servidor MCP:
 
 ```json
 {
   "navegador": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] },
-  "canva": { "command": "npx", "args": ["-y", "mcp-remote", "https://mcp.canva.com/mcp"] },
+  "graphify": { "command": "python", "args": ["-m", "graphify.serve", "C:/mi/proyecto/graphify-out/graph.json"] },
   "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"],
               "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..." } }
 }

@@ -98,6 +98,10 @@ const I18N = {
     'Buscar': 'Search',
     '🎁 APIs de IA gratuitas': '🎁 Free AI APIs',
     'Conectores (MCP)': 'Connectors (MCP)',
+    '➕ añadir': '➕ add',
+    'reañadir': 're-add',
+    'añadido': 'added',
+    'Configuración (formato de Claude Desktop):': 'Configuration (Claude Desktop format):',
     // Dinámicos frecuentes
     'ejecutando…': 'running…',
     '⏸ esperando tu aprobación': '⏸ waiting for your approval',
