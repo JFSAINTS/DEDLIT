@@ -592,6 +592,53 @@ async function handleApi(req, res, url) {
     }
   }
 
+  // ----- 🎥 Cámara IA: restilizado de fotogramas en vivo (img2img local) -----
+  if (url.pathname === '/api/cam/status' && req.method === 'GET') {
+    return json(res, 200, await camBackend(cfg, true));
+  }
+  if (url.pathname === '/api/cam/restyle' && req.method === 'POST') {
+    const body = await readBody(req);
+    const image = dataUrlB64(body.image);
+    if (!image) return json(res, 400, { error: 'Falta image (data-URL base64)' });
+    const backend = await camBackend(cfg);
+    if (!backend.backend) {
+      return json(res, 502, { error: 'Sin backend de imágenes: arranca Stable Diffusion (Automatic1111 con --api) o ComfyUI.' });
+    }
+    const clamp = (v, min, max, def) => Math.min(max, Math.max(min, Number(v) || def));
+    const snap8 = v => Math.round(v / 8) * 8;
+    const opts = {
+      image,
+      prompt: String(body.prompt || '').slice(0, 2000),
+      negative: String(body.negative || '').slice(0, 1000) || undefined,
+      denoise: clamp(body.denoise, 0.1, 0.95, 0.5),
+      steps: Math.round(clamp(body.steps, 4, 40, 12)),
+      width: snap8(clamp(body.width, 64, 1024, 512)),
+      height: snap8(clamp(body.height, 64, 1024, 512)),
+      cfg
+    };
+    try {
+      let buf;
+      if (backend.backend === 'sd') {
+        // Imagen de referencia ("skin"): vía IP-Adapter si la extensión
+        // ControlNet está instalada; si no, el cliente ya la fundió en el fotograma
+        const ref = dataUrlB64(body.refImage);
+        if (ref && backend.ipAdapter) {
+          opts.alwayson = { controlnet: { args: [{
+            enabled: true, module: backend.ipAdapter.module, model: backend.ipAdapter.model,
+            image: ref, weight: clamp(body.refWeight, 0, 1, 0.7), resize_mode: 1, pixel_perfect: true
+          }] } };
+        }
+        buf = await providers.sdImg2Img(opts);
+      } else {
+        buf = await providers.comfyImg2Img(opts);
+      }
+      return json(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), backend: backend.backend });
+    } catch (err) {
+      camCache = null; // el backend pudo caerse a mitad: redetectar en la próxima
+      return json(res, 502, { error: err.message });
+    }
+  }
+
   // Chat (SSE) — con o sin modo agente
   if (url.pathname === '/api/chat' && req.method === 'POST') {
     const body = await readBody(req);
@@ -693,6 +740,33 @@ async function generateImageBuffer(backend, prompt, cfg) {
   }
   const buf = await providers.generateImage({ providerId: backend.provider, model: backend.model, prompt, cfg });
   return { buf, label: backend.provider + ':' + backend.model };
+}
+
+// ---------- 🎥 Cámara IA ----------
+
+// Extrae el base64 de un data-URL de imagen (o de base64 pelado); null si no vale
+function dataUrlB64(v) {
+  const s = String(v || '');
+  const m = s.match(/^data:image\/\w+;base64,([A-Za-z0-9+/=]+)$/);
+  if (m) return m[1];
+  return /^[A-Za-z0-9+/=]{100,}$/.test(s) ? s : null;
+}
+
+// Backend de restilizado (SD WebUI → ComfyUI) con caché de 10 s: los fotogramas
+// llegan en bucle y no tiene sentido sondear el backend en cada uno
+let camCache = null;
+async function camBackend(cfg, force) {
+  if (!force && camCache && Date.now() - camCache.at < 10000) return camCache.value;
+  let value = { backend: null, ipAdapter: null };
+  const sd = await providers.sdCheck(cfg);
+  if (sd.online) {
+    value = { backend: 'sd', model: sd.models[0] || '', ipAdapter: await providers.sdIpAdapter(cfg) };
+  } else {
+    const comfy = await providers.comfyCheck(cfg);
+    if (comfy.online && comfy.models.length) value = { backend: 'comfy', model: comfy.models[0], ipAdapter: null };
+  }
+  camCache = { at: Date.now(), value };
+  return value;
 }
 
 // Herramienta search_docs del agente: busca en todas las colecciones RAG

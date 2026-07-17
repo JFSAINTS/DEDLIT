@@ -171,6 +171,16 @@ Según las capacidades del modelo cargado (se muestran como chips bajo el select
 
 Todos los archivos (adjuntos y generados) se guardan **en tu disco** en `%USERPROFILE%\.dedlit\media\`; el historial solo guarda referencias ligeras, y nada se sube a ningún sitio salvo al proveedor del modelo que tú elijas.
 
+## 🎥 Cámara IA (efectos y skins en vivo)
+
+Botón **🎥 Cámara IA** en la barra lateral: abre tu webcam y aplica, en local, dos capas de transformación al estilo de las apps de vídeo-IA en tiempo real:
+
+- **Efectos en tiempo real** (instantáneos, sin IA): shaders WebGL propios — pixelado, cómic, VHS, térmico, glitch, Matrix, negativo… Añadir uno nuevo es escribir su *fragment shader* en `CAM_EFFECTS` (`public/cam.js`).
+- **Restilizado IA en vivo**: cada fotograma pasa por **img2img** en tu **Stable Diffusion local** (Automatic1111 con `--api`; ComfyUI como alternativa). Elige un preset (🎌 Anime, 🌆 Cyberpunk, 🧟 Zombi, 🗿 Estatua…) o escribe tu propio prompt, y ajusta intensidad y pasos — con pocos pasos (8–12) una GPU media da ~1 fotograma/segundo. Todo 100% privado: los fotogramas nunca salen de tu equipo.
+- **Imagen de referencia (skin)**: pásale una imagen y se aplica sobre ti. Si SD WebUI tiene la extensión **ControlNet con un modelo IP-Adapter**, se usa de verdad (transferencia de estilo/identidad); si no, la referencia se funde suavemente en el fotograma como guía.
+- **Mis skins**: guarda cualquier combinación (prompt + intensidad + efecto) con 💾 y reutilízala con un clic.
+- **📸 Capturar** adjunta el fotograma actual al chat (p. ej. para pedirle algo al modelo sobre él) y **⏺ Grabar** descarga un vídeo webm de la vista.
+
 ## Integración con VS Code
 
 1. **Abrir el workspace**: botón *⌨ VS Code* en la barra lateral.

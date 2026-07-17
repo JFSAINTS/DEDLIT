@@ -38,6 +38,19 @@ function startMock() {
         });
         return;
       }
+      if (req.url === '/sdapi/v1/sd-models') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify([{ model_name: 'mock-sd' }]));
+      }
+      if (req.url === '/sdapi/v1/img2img') {
+        let b = ''; req.on('data', c => b += c); req.on('end', () => {
+          const body = JSON.parse(b);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          // devuelve el mismo init_image: suficiente para verificar el circuito
+          res.end(JSON.stringify({ images: [body.init_images[0]] }));
+        });
+        return;
+      }
       res.writeHead(404); res.end();
     });
     mock.listen(0, '127.0.0.1', () => resolve());
@@ -57,6 +70,7 @@ before(async () => {
   // pre-sembrar la config para que "lmstudio" apunte al mock
   const cfg = configLib.load();
   cfg.baseUrls.lmstudio = 'http://127.0.0.1:' + mock.address().port + '/v1';
+  cfg.sdWebuiUrl = 'http://127.0.0.1:' + mock.address().port; // el mock también hace de SD WebUI
   configLib.save(cfg);
   server = require('../server'); // efecto secundario: empieza a escuchar
   await waitReady();
@@ -117,6 +131,30 @@ test('CRUD de /api/chats', async () => {
   await fetch(BASE + '/api/chats/' + saved.id, { method: 'DELETE' });
   const list2 = await (await fetch(BASE + '/api/chats')).json();
   assert.ok(!list2.chats.some(c => c.id === saved.id));
+});
+
+test('GET /api/cam/status detecta el backend de restilizado', async () => {
+  const s = await (await fetch(BASE + '/api/cam/status')).json();
+  assert.equal(s.backend, 'sd');
+  assert.equal(s.ipAdapter, null); // el mock no tiene ControlNet
+});
+
+test('POST /api/cam/restyle restiliza un fotograma vía img2img', async () => {
+  const b64 = Buffer.from('fotograma-de-prueba').toString('base64');
+  const r = await (await fetch(BASE + '/api/cam/restyle', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: 'data:image/jpeg;base64,' + b64, prompt: 'anime style', denoise: 0.5, steps: 10 })
+  })).json();
+  assert.equal(r.backend, 'sd');
+  assert.equal(r.image, 'data:image/png;base64,' + b64); // el mock devuelve el mismo fotograma
+});
+
+test('POST /api/cam/restyle sin imagen devuelve 400', async () => {
+  const res = await fetch(BASE + '/api/cam/restyle', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: 'x' })
+  });
+  assert.equal(res.status, 400);
 });
 
 test('rechaza chat con parámetros faltantes', async () => {
