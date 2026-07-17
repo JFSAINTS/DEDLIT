@@ -181,6 +181,16 @@ Botón **🎥 Cámara IA** en la barra lateral: abre tu webcam y aplica, en loca
 - **Mis skins**: guarda cualquier combinación (prompt + intensidad + efecto) con 💾 y reutilízala con un clic.
 - **📸 Capturar** adjunta el fotograma actual al chat (p. ej. para pedirle algo al modelo sobre él) y **⏺ Grabar** descarga un vídeo webm de la vista.
 
+## 🎥 DEDLIT Webcam (aplicación autónoma)
+
+¿Solo quieres la cámara, sin el resto de DEDLIT? `standalone/dedlit-webcam.html` es una **aplicación completa en un único archivo HTML**: ábrela con doble clic (o sírvela estática) — sin servidor, sin dependencias, sin instalación. Tres pestañas:
+
+- **🎥 Cámara** — los mismos efectos WebGL y el restilizado IA en vivo, hablando **directamente** con la API de Stable Diffusion. Arranca Automatic1111/SD.Next/Forge con `--api --cors-allow-origins=*` (el flag CORS es necesario al no compartir origen). IP-Adapter, presets y skins IA (ahora con la imagen de referencia guardada dentro del skin) incluidos.
+- **🎨 Creador de filtros** — construye filtros **en vivo y sin escribir código** con controles (pixelado, posterizar, bordes, tono, saturación, tinte, scanlines, ruido, desplazamiento RGB…) sobre un *übershader* paramétrico, y guárdalos con nombre. Modo experto opcional: escribe tu propio fragment shader GLSL con validación de compilación.
+- **🧑‍🎤 VTuber (PNGTuber)** — avatar de imagen reactivo a tu micrófono: en silencio respira, al hablar rebota o alterna a la imagen "boca abierta" si cargas una segunda. Fondo croma verde (para recortar en OBS), color, imagen o tu propia cámara restilizada; botón **🪟 Ventana para OBS** que abre una ventana limpia solo con el vídeo, lista para *Captura de ventana* en OBS y streamear.
+
+Los efectos en tiempo real, el creador de filtros y el modo VTuber funcionan **sin nada más**; solo el restilizado IA necesita Stable Diffusion. Todo (skins, filtros, URL de SD) persiste en `localStorage` y nada sale de tu equipo.
+
 ## Integración con VS Code
 
 1. **Abrir el workspace**: botón *⌨ VS Code* en la barra lateral.
