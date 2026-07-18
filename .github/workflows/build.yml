@@ -48,6 +48,7 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run build:exe
+      - run: npm run build:webcam
       - run: Rename-Item dist/dedlit-studio.exe dedlit-studio-win-x64.exe
         shell: pwsh
       # Los artefactos consumen cuota de almacenamiento (limitada en repos
@@ -58,7 +59,9 @@ jobs:
         continue-on-error: true
         with:
           name: dedlit-studio-win-x64
-          path: dist/dedlit-studio-win-x64.exe
+          path: |
+            dist/dedlit-studio-win-x64.exe
+            dist/dedlit-webcam.exe
           retention-days: 1
       # En las releases los binarios van directos a los assets de la release,
       # que no consumen cuota de artefactos
@@ -69,7 +72,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$env:GITHUB_REF_NAME" --title "$env:GITHUB_REF_NAME" --generate-notes 2>$null; if (-not $?) { "release ya existe" }
-          gh release upload "$env:GITHUB_REF_NAME" dist/dedlit-studio-win-x64.exe --clobber
+          gh release upload "$env:GITHUB_REF_NAME" dist/dedlit-studio-win-x64.exe dist/dedlit-webcam.exe --clobber
 
   exe-linux:
     runs-on: ubuntu-latest

@@ -165,11 +165,36 @@ Según las capacidades del modelo cargado (se muestran como chips bajo el select
 
 - 🖼️ **Generar imagen**: si tienes **Stable Diffusion local** (Automatic1111/SD.Next/Forge arrancado con `--api`; URL en Ajustes) se usa automáticamente — gratis y 100% privado. Si no, `gpt-image-1`/`dall-e-3` (OpenAI), `grok-2-image` (xAI) o `cogview-4` (Zhipu) con key.
 
-  ¿No lo tienes instalado? En la barra lateral, junto a *Stable Diffusion*, aparece un botón **⬇ Instalar** (clona Automatic1111 en `~/.dedlit`; requiere `git` y Python 3.10+, y el primer arranque descarga varios GB) y, cuando ya está instalado pero apagado, **▶ Lanzar** (lo arranca con `--api` y espera a que esté listo). La carpeta de instalación es configurable en Ajustes.
+  ¿No lo tienes instalado? En la barra lateral, junto a *Stable Diffusion*, aparece un botón **⬇ Instalar** (clona Automatic1111 en `~/.dedlit`; requiere `git` y Python 3.10+, y el primer arranque descarga varios GB) y, cuando ya está instalado pero apagado, **▶ Lanzar** (lo arranca con `--api` y espera a que esté listo). La carpeta de instalación es configurable en Ajustes. **ComfyUI tiene sus propios botones Instalar/Lanzar** con el mismo flujo (DEDLIT genera su launcher `dedlit-comfy.bat`/`.sh`, que crea el entorno de Python e instala torch en el primer arranque — con wheels CUDA si detecta NVIDIA).
 - 🔊 **Generar voz (TTS)**: `tts-1`, `gpt-4o-mini-tts`… (campo de voz configurable: alloy, echo, nova…).
 - 📝 **Transcribir audio**: adjunta un audio y usa `whisper-1` / `gpt-4o-transcribe`.
 
 Todos los archivos (adjuntos y generados) se guardan **en tu disco** en `%USERPROFILE%\.dedlit\media\`; el historial solo guarda referencias ligeras, y nada se sube a ningún sitio salvo al proveedor del modelo que tú elijas.
+
+## 🎥 Cámara IA (efectos y skins en vivo)
+
+Botón **🎥 Cámara IA** en la barra lateral: abre tu webcam y aplica, en local, dos capas de transformación al estilo de las apps de vídeo-IA en tiempo real:
+
+- **Efectos en tiempo real** (instantáneos, sin IA): shaders WebGL propios — pixelado, cómic, VHS, térmico, glitch, Matrix, negativo… Añadir uno nuevo es escribir su *fragment shader* en `CAM_EFFECTS` (`public/cam.js`).
+- **Restilizado IA en vivo**: cada fotograma pasa por **img2img** en tu **Stable Diffusion local** (Automatic1111 con `--api`; ComfyUI como alternativa). Elige un preset (🎌 Anime, 🌆 Cyberpunk, 🧟 Zombi, 🗿 Estatua…) o escribe tu propio prompt, y ajusta intensidad y pasos — con pocos pasos (8–12) una GPU media da ~1 fotograma/segundo. Todo 100% privado: los fotogramas nunca salen de tu equipo.
+- **Imagen de referencia (skin)**: pásale una imagen y se aplica sobre ti. Si SD WebUI tiene la extensión **ControlNet con un modelo IP-Adapter**, se usa de verdad (transferencia de estilo/identidad); si no, la referencia se funde suavemente en el fotograma como guía.
+- **Mis skins**: guarda cualquier combinación (prompt + intensidad + efecto) con 💾 y reutilízala con un clic.
+- **📸 Capturar** adjunta el fotograma actual al chat (p. ej. para pedirle algo al modelo sobre él) y **⏺ Grabar** descarga un vídeo webm de la vista.
+
+## 🎥 DEDLIT Webcam (aplicación autónoma)
+
+¿Solo quieres la cámara, sin el resto de DEDLIT? `standalone/dedlit-webcam.html` es una **aplicación completa en un único archivo HTML**: ábrela con doble clic (o sírvela estática) — sin servidor, sin dependencias, sin instalación. Desde DEDLIT Studio también la tienes a un clic con el botón **🎬 Webcam** de la barra lateral (se sirve en `/webcam`, con el proxy de SD incluido — sin flags CORS). Tres pestañas:
+
+- **🎥 Cámara** — los mismos efectos WebGL y el restilizado IA en vivo, hablando **directamente** con la API de Stable Diffusion. Arranca Automatic1111/SD.Next/Forge con `--api --cors-allow-origins=*` (el flag CORS es necesario al no compartir origen). IP-Adapter, presets y skins IA (ahora con la imagen de referencia guardada dentro del skin) incluidos.
+- **🎨 Creador de filtros** — construye filtros **en vivo y sin escribir código** con controles (pixelado, posterizar, bordes, tono, saturación, tinte, scanlines, ruido, desplazamiento RGB…) sobre un *übershader* paramétrico, y guárdalos con nombre. Modo experto opcional: escribe tu propio fragment shader GLSL con validación de compilación.
+- **🧑‍🎤 VTuber (PNGTuber)** — avatar de imagen reactivo a tu micrófono: en silencio respira, al hablar rebota o alterna a la imagen "boca abierta" si cargas una segunda. Fondo croma verde (para recortar en OBS), color, imagen o tu propia cámara restilizada; botón **🪟 Ventana para OBS** que abre una ventana limpia solo con el vídeo, lista para *Captura de ventana* en OBS y streamear.
+- **🧊 Avatar 3D (VRM)** — carga un modelo `.vrm` (créalo desde una foto con [2d2vrm](https://2d2vrm.k2wanko.dev/) o con VRoid Studio) y se convierte en tu avatar 3D: boca sincronizada con tu voz (expresión `aa`), parpadeo automático, respiración y balanceo. Renderizado con un **mini-motor VRM propio en WebGL2, sin dependencias** (subconjunto de glTF: skinning, texturas, morphs, huesos humanoides estándar de VRM 0.x y 1.0; MToon se aproxima como unlit). Experimental: reproduce animaciones **`.vrma`** (VRM Animation) en bucle, p. ej. generadas con [text-to-vrma](https://github.com/Kirakun0328/text-to-vrma).
+
+Los efectos en tiempo real, el creador de filtros y el modo VTuber funcionan **sin nada más**; solo el restilizado IA necesita Stable Diffusion. Todo (skins, filtros, URL de SD) persiste en `localStorage` y nada sale de tu equipo.
+
+**⚡ Lucy Realtime (nube, opcional)** — vídeo-a-vídeo real a **30 fps** con [Lucy 2.5 de Decart](https://platform.decart.ai/) sobre WebRTC, al estilo de lucy.decart.ai: pega tu API key de Decart, pulsa Conectar y el prompt/presets y la imagen de referencia (skin) se aplican en directo (`setPrompt`/`setImage` en caliente). Es **el único modo no-local** de la app y es de pago: mientras esté conectado tu vídeo se envía a la nube de Decart — la interfaz lo avisa claramente. Usa el [SDK oficial MIT de Decart](https://github.com/DecartAI/sdk) vendorizado en `standalone/decart-sdk.js` (única pieza de terceros del cliente; se carga solo al conectar, con instrucciones de regeneración en su cabecera).
+
+**App para Windows (`dedlit-webcam.exe`)** — la forma más cómoda: descarga `dedlit-webcam.exe` de las [releases](https://github.com/JFSAINTS/DEDLIT/releases) (o compílalo con `npm run build:webcam`), haz doble clic y se abre solo en tu navegador. El lanzador (`standalone/webcam-launcher.js`, cero dependencias) además hace de **proxy hacia la API de Stable Diffusion**, así que basta arrancar A1111 con `--api` a secas — sin flags CORS. Solo escucha en `127.0.0.1` (puerto `DEDLIT_WEBCAM_PORT`, por defecto 8645).
 
 ## Integración con VS Code
 

@@ -988,27 +988,40 @@ async function refreshLocalStatus() {
       dot.className = 'dot ' + (st[id].online ? 'on' : 'off');
       detail.textContent = st[id].online ? (st[id].models?.length || 0) + ' modelos' : 'apagado';
     }
-    // Botón de acción de Stable Diffusion: instalar / lanzar / (nada si corre)
-    const btn = $('btn-sd-action');
-    if (btn && !sdBusy) {
-      if (st.sd?.online) { btn.classList.add('hidden'); }
-      else if (st.sd?.installed) { btn.textContent = '▶ Lanzar'; btn.dataset.act = 'launch'; btn.classList.remove('hidden'); }
+    // Botones de acción de los backends de imagen: instalar / lanzar / (nada si corre)
+    for (const b of Object.values(BACKEND_ACTIONS)) {
+      const btn = $(b.btn);
+      if (!btn || b.busy) continue;
+      if (st[b.key]?.online) { btn.classList.add('hidden'); }
+      else if (st[b.key]?.installed) { btn.textContent = '▶ Lanzar'; btn.dataset.act = 'launch'; btn.classList.remove('hidden'); }
       else { btn.textContent = '⬇ Instalar'; btn.dataset.act = 'install'; btn.classList.remove('hidden'); }
     }
   } catch { /* servidor reiniciándose */ }
 }
 
-let sdBusy = false;
+// Instalar/lanzar Stable Diffusion y ComfyUI comparten el mismo flujo
+const BACKEND_ACTIONS = {
+  sd: {
+    key: 'sd', btn: 'btn-sd-action', detail: 'detail-sd', api: '/api/sd', busy: false,
+    confirmMsg: 'Se descargará Stable Diffusion WebUI (Automatic1111) en tu equipo.\n\nRequisitos: git y Python 3.10+. El primer arranque descargará varios GB (torch + un modelo) y tardará bastante.\n\n¿Continuar?',
+    errLabel: 'Stable Diffusion'
+  },
+  comfy: {
+    key: 'comfy', btn: 'btn-comfy-action', detail: 'detail-comfy', api: '/api/comfy', busy: false,
+    confirmMsg: 'Se descargará ComfyUI en tu equipo.\n\nRequisitos: git y Python 3.10+. El primer lanzamiento creará el entorno de Python e instalará torch (varios GB) y tardará bastante.\n\n¿Continuar?',
+    errLabel: 'ComfyUI'
+  }
+};
 
-async function sdAction() {
-  const btn = $('btn-sd-action');
-  const detail = $('detail-sd');
+async function backendAction(b) {
+  const btn = $(b.btn);
+  const detail = $(b.detail);
   if (btn.dataset.act === 'launch') {
-    sdBusy = true;
+    b.busy = true;
     btn.classList.add('hidden');
     detail.textContent = 'lanzando…';
     try {
-      const r = await (await fetch('/api/sd/launch', { method: 'POST' })).json();
+      const r = await (await fetch(b.api + '/launch', { method: 'POST' })).json();
       if (r.error) throw new Error(r.error);
       detail.textContent = 'arrancando (puede tardar)…';
       // sondear hasta que el API responda (o rendirse a los ~5 min)
@@ -1016,19 +1029,19 @@ async function sdAction() {
       const poll = setInterval(async () => {
         tries++;
         try { const s = await (await fetch('/api/status')).json();
-          if (s.sd?.online) { clearInterval(poll); sdBusy = false; refreshLocalStatus(); } } catch {}
-        if (tries > 150) { clearInterval(poll); sdBusy = false; }
+          if (s[b.key]?.online) { clearInterval(poll); b.busy = false; refreshLocalStatus(); } } catch {}
+        if (tries > 150) { clearInterval(poll); b.busy = false; }
       }, 2000);
-    } catch (err) { alert('No se pudo lanzar: ' + err.message); sdBusy = false; refreshLocalStatus(); }
+    } catch (err) { alert('No se pudo lanzar: ' + err.message); b.busy = false; refreshLocalStatus(); }
     return;
   }
   // instalar
-  if (!confirm('Se descargará Stable Diffusion WebUI (Automatic1111) en tu equipo.\n\nRequisitos: git y Python 3.10+. El primer arranque descargará varios GB (torch + un modelo) y tardará bastante.\n\n¿Continuar?')) return;
-  sdBusy = true;
+  if (!confirm(b.confirmMsg)) return;
+  b.busy = true;
   btn.classList.add('hidden');
   detail.textContent = 'instalando…';
   try {
-    const res = await fetch('/api/sd/install', { method: 'POST' });
+    const res = await fetch(b.api + '/install', { method: 'POST' });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = '';
@@ -1048,9 +1061,9 @@ async function sdAction() {
       }
     }
   } catch (err) {
-    alert('Instalación de Stable Diffusion: ' + err.message);
+    alert('Instalación de ' + b.errLabel + ': ' + err.message);
   } finally {
-    sdBusy = false;
+    b.busy = false;
     refreshLocalStatus();
   }
 }
@@ -1179,6 +1192,8 @@ function openSettings() {
   $('cfg-sdpath').value = c.sdWebuiPath || '';
   $('cfg-sdpath').placeholder = c.sdWebuiPathDefault || '';
   $('cfg-comfy').value = c.comfyUrl || '';
+  $('cfg-comfypath').value = c.comfyPath || '';
+  $('cfg-comfypath').placeholder = c.comfyPathDefault || '';
   $('cfg-stt').value = c.sttUrl || '';
   $('cfg-tts').value = c.ttsUrl || '';
   $('cfg-instructions').value = c.customInstructions || '';
@@ -1253,6 +1268,7 @@ async function saveSettings() {
         sdWebuiUrl: $('cfg-sdurl').value.trim(),
         sdWebuiPath: $('cfg-sdpath').value.trim(),
         comfyUrl: $('cfg-comfy').value.trim(),
+        comfyPath: $('cfg-comfypath').value.trim(),
         sttUrl: $('cfg-stt').value.trim(),
         ttsUrl: $('cfg-tts').value.trim(),
         customInstructions: $('cfg-instructions').value,
@@ -1823,7 +1839,9 @@ $('btn-theme').onclick = toggleTheme;
 function openDrawer() { $('app').classList.add('drawer-open'); $('sidebar-backdrop').classList.remove('hidden'); }
 function closeDrawer() { $('app').classList.remove('drawer-open'); $('sidebar-backdrop').classList.add('hidden'); }
 $('btn-hamburger').onclick = openDrawer;
-$('btn-sd-action').onclick = sdAction;
+$('btn-sd-action').onclick = () => backendAction(BACKEND_ACTIONS.sd);
+$('btn-comfy-action').onclick = () => backendAction(BACKEND_ACTIONS.comfy);
+$('btn-open-webcam').onclick = () => window.open('/webcam', '_blank');
 
 // Copiar bloques de código (delegación)
 $('messages').addEventListener('click', e => {

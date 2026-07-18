@@ -1,0 +1,1963 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>◆ DEDLIT Webcam</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🎥</text></svg>">
+<!--
+  DEDLIT Webcam — aplicación AUTÓNOMA de webcam. Un solo archivo, sin
+  dependencias ni servidor: ábrelo con doble clic (o sírvelo estático).
+
+  · 🎥 Cámara: efectos WebGL en tiempo real + restilizado IA en vivo
+    (habla DIRECTAMENTE con la API de Stable Diffusion — Automatic1111 /
+    SD.Next / Forge arrancado con:  --api --cors-allow-origins=*
+    El flag CORS es necesario porque esta página no vive en el mismo
+    origen que la API. Con la extensión ControlNet + un modelo IP-Adapter,
+    la imagen de referencia se aplica de verdad).
+  · 🎨 Creador de filtros: construye tu filtro con controles (píxel,
+    bordes, tono, tinte, scanlines…) sin escribir código, o en modo
+    experto escribe tu propio fragment shader GLSL. Se guardan con nombre.
+  · 🧑‍🎤 VTuber (PNGTuber): avatar de imagen reactivo al micrófono, fondo
+    croma verde/color/imagen o tu cámara restilizada, y ventana limpia
+    para capturar en OBS.
+
+  Crear un efecto de fábrica nuevo = añadir una entrada a CAM_EFFECTS con
+  su fragment shader. Todo persiste en localStorage. Nada sale de tu equipo.
+-->
+<style>
+  :root {
+    --bg: #0f1117; --bg-panel: #171a23; --bg-input: #1e222e; --bg-hover: #232837;
+    --border: #2a3040; --text: #e6e9f0; --text-dim: #8b93a7;
+    --accent: #7c6cf5; --accent-hover: #9385ff;
+    --green: #3ecf8e; --red: #f56c6c; --radius: 10px;
+    --mono: 'Cascadia Code', 'Consolas', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+    display: flex; flex-direction: column;
+  }
+  .hidden { display: none !important; }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 16px; letter-spacing: 1px; color: var(--accent-hover); white-space: nowrap; }
+  #backend { margin-left: auto; font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+  #sd-url { width: 200px; font-size: 12px; }
+
+  .tabs { display: flex; gap: 4px; margin-left: 12px; }
+  .tabs button {
+    background: none; border: 1px solid transparent; color: var(--text-dim);
+    padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  .tabs button.active { background: var(--bg-input); border-color: var(--accent); color: var(--text); }
+  .tabs button:hover { color: var(--accent-hover); }
+
+  main { flex: 1; display: flex; gap: 14px; padding: 14px; min-height: 0; }
+  .stage {
+    flex: 1.7; position: relative; background: #000; border-radius: var(--radius);
+    border: 1px solid var(--border); overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #view { max-width: 100%; max-height: 100%; display: block; }
+  #status {
+    position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px);
+    background: rgba(0,0,0,0.65); color: #fff; font-size: 12px;
+    padding: 5px 10px; border-radius: 8px;
+  }
+
+  .controls { flex: 1; min-width: 290px; max-width: 390px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; }
+  .controls label, .controls .lbl {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--text-dim); margin-top: 8px; display: flex; align-items: center; gap: 6px;
+  }
+  select, input[type="text"], textarea {
+    background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; width: 100%;
+  }
+  select:focus, input:focus, textarea:focus { outline: 1px solid var(--accent); }
+  textarea { resize: vertical; }
+  textarea.code { font-family: var(--mono); font-size: 12px; }
+  .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; margin-top: 4px; text-transform: none; letter-spacing: 0; color: var(--text); }
+
+  .ai-head { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .ai-head span { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-dim); }
+  .switch { position: relative; width: 38px; height: 21px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; cursor: pointer;
+    background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 21px; transition: 0.2s;
+  }
+  .slider::before {
+    content: ""; position: absolute; height: 15px; width: 15px;
+    left: 2px; top: 2px; background: var(--text-dim); border-radius: 50%; transition: 0.2s;
+  }
+  .switch input:checked + .slider { background: var(--accent); border-color: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(17px); background: white; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip {
+    font-size: 12px; padding: 4px 10px; border-radius: 12px; cursor: pointer;
+    background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent-hover); }
+  .chip.skin { background: #2a1c3a; border-color: #45275c; }
+  .chip .del { color: var(--text-dim); margin-left: 3px; }
+  .chip .del:hover { color: var(--red); }
+
+  .slider-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-dim); text-transform: none; letter-spacing: 0; margin-top: 2px; }
+  .slider-row b { font-weight: 400; min-width: 84px; }
+  .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .slider-row output { font-family: var(--mono); font-size: 11.5px; min-width: 34px; text-align: right; }
+  input[type="color"] { background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; width: 42px; height: 26px; padding: 1px; cursor: pointer; }
+
+  .ref-row { display: flex; align-items: center; gap: 10px; }
+  button {
+    background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+    padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-family: inherit;
+  }
+  button:hover { border-color: var(--accent); }
+  button.mini { background: none; border: none; color: var(--text-dim); padding: 0 3px; font-size: 13px; }
+  button.mini:hover { color: var(--accent-hover); }
+  button.primary { background: var(--accent); border: none; color: white; font-weight: 600; }
+  button.primary:hover { background: var(--accent-hover); }
+  .thumb { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-input); }
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .actions button { flex: 1; }
+  #btn-rec.recording { border-color: var(--red); color: var(--red); animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: 0.35; } }
+  .hint { font-size: 11.5px; color: var(--text-dim); line-height: 1.5; text-transform: none; letter-spacing: 0; }
+  .hint code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: 11px; }
+  details summary { cursor: pointer; font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+  #mic-meter { height: 6px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  #mic-meter > div { height: 100%; width: 0; background: var(--green); transition: width 0.06s linear; }
+  ::-webkit-scrollbar { width: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+
+  @media (max-width: 760px) {
+    main { flex-direction: column; overflow-y: auto; }
+    .stage { min-height: 240px; flex: none; }
+    .controls { max-width: none; overflow: visible; }
+    header { flex-wrap: wrap; }
+    #backend { margin-left: 0; flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>◆ DEDLIT Webcam</h1>
+    <nav class="tabs">
+      <button id="tab-cam" class="active">🎥 Cámara</button>
+      <button id="tab-filter">🎨 Filtros</button>
+      <button id="tab-vtuber">🧑‍🎤 VTuber</button>
+    </nav>
+    <span id="backend"></span>
+    <input type="text" id="sd-url" placeholder="http://127.0.0.1:7860" title="URL de Stable Diffusion WebUI (arráncalo con --api --cors-allow-origins=*)">
+    <button id="btn-check" title="Volver a detectar Stable Diffusion">⟳</button>
+  </header>
+
+  <main>
+    <div class="stage">
+      <video id="video" autoplay playsinline muted class="hidden"></video>
+      <canvas id="view"></canvas>
+      <div id="status" class="hidden"></div>
+    </div>
+
+    <!-- ===== 🎥 Cámara ===== -->
+    <div class="controls" id="panel-cam">
+      <label>Cámara</label>
+      <select id="device"></select>
+
+      <label>Efecto en tiempo real</label>
+      <select id="effect"></select>
+      <label class="check-row"><input type="checkbox" id="mirror" checked> Espejo</label>
+
+      <div class="ai-head">
+        <span>Restilizado IA (en vivo)</span>
+        <label class="switch"><input type="checkbox" id="ai"><span class="slider"></span></label>
+      </div>
+      <div id="presets" class="chips"></div>
+      <textarea id="prompt" rows="2" placeholder="Describe el estilo… p. ej.: anime style, cel shading"></textarea>
+      <label class="slider-row"><b>Intensidad</b> <input type="range" id="denoise" min="0.2" max="0.9" step="0.05" value="0.55"> <output id="denoise-val">0.55</output></label>
+      <label class="slider-row"><b>Pasos</b> <input type="range" id="steps" min="4" max="30" step="1" value="10"> <output id="steps-val">10</output></label>
+
+      <label>Imagen de referencia (skin) <button id="btn-ref-clear" class="mini hidden" title="Quitar referencia">✕</button></label>
+      <div class="ref-row">
+        <button id="btn-ref">🖼 Elegir imagen…</button>
+        <img id="ref-preview" class="thumb hidden" alt="">
+      </div>
+      <label class="slider-row"><b>Peso ref.</b> <input type="range" id="ref-weight" min="0.1" max="1" step="0.05" value="0.6"> <output id="ref-weight-val">0.6</output></label>
+      <input type="file" id="ref-file" accept="image/*" class="hidden">
+      <p class="hint" id="ref-hint"></p>
+
+      <label>Mis skins IA <button id="btn-skin-save" class="mini" title="Guardar el estilo actual (prompt + intensidad + efecto + referencia) como skin">💾 guardar</button></label>
+      <div id="skins" class="chips"></div>
+
+      <label>⚡ Lucy Realtime — nube (Decart) <span id="lucy-state" class="hint" style="text-transform:none;letter-spacing:0"></span></label>
+      <input type="password" id="lucy-key" placeholder="API key de Decart (platform.decart.ai)" autocomplete="off">
+      <div class="ref-row">
+        <button id="btn-lucy">⚡ Conectar</button>
+      </div>
+      <p class="hint">Vídeo-a-vídeo real a <b>30 fps</b> con Lucy 2.5 usando tu cuenta de Decart (de pago): usa el prompt y los presets de arriba, y la imagen de referencia como skin. ⚠ Mientras esté conectado <b>tu vídeo se envía a la nube de Decart</b> — nada es local en este modo. El SDK (archivo <code>decart-sdk.js</code> junto a esta página) solo se carga al conectar.</p>
+
+      <div class="actions">
+        <button id="btn-shot" title="Descargar el fotograma actual como PNG">📸 Capturar</button>
+        <button id="btn-rec" title="Grabar la vista en vídeo (webm)">⏺ Grabar</button>
+      </div>
+
+      <p class="hint" style="margin-top:10px" id="setup-hint">Para el restilizado IA arranca Stable Diffusion WebUI (Automatic1111 / SD.Next / Forge) con
+      <code>--api --cors-allow-origins=*</code>. Los efectos y filtros funcionan siempre, sin nada más. Nada sale de tu equipo.</p>
+    </div>
+
+    <!-- ===== 🎨 Creador de filtros ===== -->
+    <div class="controls hidden" id="panel-filter">
+      <p class="hint">Mueve los controles y verás el filtro <b>en vivo</b> sobre tu cámara. Guárdalo con nombre y aparecerá en tus filtros (y en el selector de efectos de la pestaña 🎥).</p>
+      <label class="slider-row"><b>Píxel</b> <input type="range" id="f-pixel" min="0" max="200" step="2" value="0"> <output>0</output></label>
+      <label class="slider-row"><b>Posterizar</b> <input type="range" id="f-poster" min="0" max="12" step="1" value="0"> <output>0</output></label>
+      <label class="slider-row"><b>Bordes</b> <input type="range" id="f-edge" min="0" max="1" step="0.05" value="0"> <output>0</output></label>
+      <label class="slider-row"><b>Tono</b> <input type="range" id="f-hue" min="-180" max="180" step="5" value="0"> <output>0</output></label>
+      <label class="slider-row"><b>Saturación</b> <input type="range" id="f-sat" min="0" max="2" step="0.05" value="1"> <output>1</output></label>
+      <label class="slider-row"><b>Brillo</b> <input type="range" id="f-bright" min="0.5" max="1.6" step="0.05" value="1"> <output>1</output></label>
+      <label class="slider-row"><b>Contraste</b> <input type="range" id="f-contrast" min="0.5" max="2" step="0.05" value="1"> <output>1</output></label>
+      <label class="slider-row"><b>Tinte</b> <input type="color" id="f-tint" value="#7c6cf5"> <input type="range" id="f-tintw" min="0" max="1" step="0.05" value="0" style="flex:1"> <output>0</output></label>
+      <label class="slider-row"><b>Scanlines</b> <input type="range" id="f-scan" min="0" max="1" step="0.05" value="0"> <output>0</output></label>
+      <label class="slider-row"><b>Ruido</b> <input type="range" id="f-noise" min="0" max="0.4" step="0.02" value="0"> <output>0</output></label>
+      <label class="slider-row"><b>3D retro (RGB)</b> <input type="range" id="f-rgbshift" min="0" max="0.02" step="0.001" value="0"> <output>0</output></label>
+      <div class="actions" style="margin-top:8px">
+        <button id="btn-filter-reset">↺ Reiniciar</button>
+        <button id="btn-filter-save" class="primary">💾 Guardar filtro…</button>
+      </div>
+
+      <label>Mis filtros</label>
+      <div id="filters" class="chips"></div>
+
+      <details>
+        <summary>🧪 Modo experto: escribe tu propio shader (GLSL)</summary>
+        <p class="hint">Cuerpo de un fragment shader. Tienes <code>uv</code> (coordenadas), <code>u_tex</code> (cámara), <code>u_res</code>, <code>u_time</code>; escribe en <code>gl_FragColor</code>.</p>
+        <textarea id="glsl-code" class="code" rows="6" spellcheck="false">vec3 c = texture2D(u_tex, uv).rgb;
+gl_FragColor = vec4(c.bgr, 1.0);</textarea>
+        <div class="actions" style="margin-top:6px">
+          <button id="btn-glsl-try">▶ Probar</button>
+          <button id="btn-glsl-save">💾 Guardar como filtro…</button>
+        </div>
+      </details>
+    </div>
+
+    <!-- ===== 🧑‍🎤 VTuber (PNGTuber) ===== -->
+    <div class="controls hidden" id="panel-vtuber">
+      <p class="hint">Avatar reactivo a tu voz: habla y tu avatar se anima. Captura la ventana en <b>OBS</b> (fondo croma verde para recortarlo) y listo para stream. Dos opciones: <b>imagen PNG</b> (PNGTuber) o <b>avatar 3D VRM</b>.</p>
+
+      <label>🧊 Avatar 3D (VRM) <button id="btn-vrm-clear" class="mini hidden" title="Quitar avatar 3D">✕</button></label>
+      <div class="ref-row">
+        <button id="btn-vrm">📂 Cargar .vrm…</button>
+        <button id="btn-vrm-flip" class="hidden" title="Si el avatar aparece de espaldas">↺ Girar</button>
+        <span class="hint" id="vrm-name"></span>
+      </div>
+      <input type="file" id="vrm-file" accept=".vrm,.glb" class="hidden">
+      <p class="hint">Boca sincronizada con tu voz + parpadeo automático. ¿No tienes avatar? Créalo desde una foto con <a href="https://2d2vrm.k2wanko.dev/" target="_blank" rel="noopener" style="color:var(--accent-hover)">2d2vrm</a> o con VRoid Studio.</p>
+
+      <div id="vrma-section" class="hidden">
+        <label>🎬 Animación (VRMA) <button id="btn-vrma-stop" class="mini hidden" title="Parar animación">⏹</button></label>
+        <div class="ref-row">
+          <button id="btn-vrma">📂 Cargar .vrma…</button>
+          <span class="hint" id="vrma-name"></span>
+        </div>
+        <input type="file" id="vrma-file" accept=".vrma,.glb" class="hidden">
+        <p class="hint">Experimental: reproduce animaciones VRM Animation en bucle — p. ej. generadas con <a href="https://github.com/Kirakun0328/text-to-vrma" target="_blank" rel="noopener" style="color:var(--accent-hover)">text-to-vrma</a> (texto → movimiento).</p>
+      </div>
+
+      <label>Avatar — en silencio</label>
+      <div class="ref-row">
+        <button id="btn-av-idle">🖼 Elegir imagen…</button>
+        <img id="av-idle-preview" class="thumb hidden" alt="">
+      </div>
+      <input type="file" id="av-idle-file" accept="image/*" class="hidden">
+
+      <label>Avatar — hablando (opcional)</label>
+      <div class="ref-row">
+        <button id="btn-av-talk">🗣 Elegir imagen…</button>
+        <img id="av-talk-preview" class="thumb hidden" alt="">
+      </div>
+      <input type="file" id="av-talk-file" accept="image/*" class="hidden">
+      <p class="hint">Sin segunda imagen, el avatar rebota al hablar. Con ella, se alterna (boca cerrada/abierta), como un PNGTuber clásico.</p>
+
+      <label>Micrófono</label>
+      <div id="mic-meter"><div></div></div>
+      <label class="slider-row"><b>Sensibilidad</b> <input type="range" id="vt-sens" min="0" max="1" step="0.05" value="0.5"> <output>0.5</output></label>
+      <label class="check-row"><input type="checkbox" id="vt-bounce" checked> Rebote al hablar</label>
+
+      <label>Fondo</label>
+      <select id="vt-bg">
+        <option value="green">🟩 Croma verde (para recortar en OBS)</option>
+        <option value="color">🎨 Color…</option>
+        <option value="cam">🎥 Mi cámara (con efecto/IA)</option>
+        <option value="image">🖼 Imagen…</option>
+      </select>
+      <div class="ref-row">
+        <input type="color" id="vt-bg-color" value="#101018" class="hidden">
+        <button id="btn-vt-bg-img" class="hidden">🖼 Elegir fondo…</button>
+        <img id="vt-bg-preview" class="thumb hidden" alt="">
+      </div>
+      <input type="file" id="vt-bg-file" accept="image/*" class="hidden">
+
+      <label class="slider-row"><b>Tamaño avatar</b> <input type="range" id="vt-size" min="0.3" max="1" step="0.05" value="0.85"> <output>0.85</output></label>
+
+      <div class="actions">
+        <button id="btn-obs" class="primary" title="Abre una ventana limpia con solo el vídeo, ideal para capturar en OBS">🪟 Ventana para OBS</button>
+        <button id="btn-vt-rec" title="Grabar la vista en vídeo (webm)">⏺ Grabar</button>
+      </div>
+    </div>
+  </main>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+
+// ---------- Efectos WebGL de fábrica (mismo registro que DEDLIT Studio) ----------
+// `body` va dentro de main(); `pre` (opcional) declara funciones auxiliares.
+
+const CAM_EFFECTS = {
+  none:    { name: '✨ Normal',    body: 'gl_FragColor = texture2D(u_tex, uv);' },
+  pixel:   { name: '🕹 Pixelado',  body: `
+    vec2 cell = vec2(96.0, 96.0 * u_res.y / u_res.x);
+    gl_FragColor = texture2D(u_tex, floor(uv * cell) / cell);` },
+  comic:   { name: '💥 Cómic',     body: `
+    vec2 px = 1.0 / u_res;
+    vec3 c = texture2D(u_tex, uv).rgb;
+    float gx = length(texture2D(u_tex, uv + vec2(px.x, 0.0)).rgb) - length(texture2D(u_tex, uv - vec2(px.x, 0.0)).rgb);
+    float gy = length(texture2D(u_tex, uv + vec2(0.0, px.y)).rgb) - length(texture2D(u_tex, uv - vec2(0.0, px.y)).rgb);
+    float edge = smoothstep(0.18, 0.4, length(vec2(gx, gy)));
+    vec3 post = floor(c * 5.0) / 5.0;
+    gl_FragColor = vec4(mix(post * 1.15, vec3(0.05), edge), 1.0);` },
+  vhs:     { name: '📼 VHS',       body: `
+    float y = uv.y + sin(u_time * 3.0 + uv.y * 40.0) * 0.0015;
+    float shift = 0.004 + 0.002 * sin(u_time * 1.7);
+    vec3 c = vec3(
+      texture2D(u_tex, vec2(uv.x + shift, y)).r,
+      texture2D(u_tex, vec2(uv.x, y)).g,
+      texture2D(u_tex, vec2(uv.x - shift, y)).b);
+    float scan = 0.9 + 0.1 * sin(uv.y * u_res.y * 3.14159);
+    float noise = fract(sin(dot(uv * u_time, vec2(12.9898, 78.233))) * 43758.5453) * 0.08;
+    gl_FragColor = vec4(c * scan + noise, 1.0);` },
+  termico: { name: '🌡 Térmico',   body: `
+    vec3 c = texture2D(u_tex, uv).rgb;
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    vec3 cold = vec3(0.05, 0.0, 0.35), mid = vec3(0.9, 0.25, 0.55), hot = vec3(1.0, 0.95, 0.3);
+    gl_FragColor = vec4(l < 0.5 ? mix(cold, mid, l * 2.0) : mix(mid, hot, l * 2.0 - 1.0), 1.0);` },
+  glitch:  { name: '👾 Glitch',    body: `
+    float band = floor(uv.y * 24.0);
+    float r = fract(sin(band * 91.7 + floor(u_time * 8.0) * 7.3) * 43758.5453);
+    float off = (r > 0.85) ? (r - 0.85) * 0.8 : 0.0;
+    vec2 p = vec2(fract(uv.x + off), uv.y);
+    vec3 c = vec3(texture2D(u_tex, p + vec2(off * 0.5, 0.0)).r, texture2D(u_tex, p).g, texture2D(u_tex, p - vec2(off * 0.5, 0.0)).b);
+    gl_FragColor = vec4(c, 1.0);` },
+  matrix:  { name: '🟩 Matrix',    body: `
+    vec3 c = texture2D(u_tex, uv).rgb;
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    float scan = 0.85 + 0.15 * sin(uv.y * u_res.y * 1.57);
+    gl_FragColor = vec4(vec3(0.05, 1.0, 0.25) * l * scan, 1.0);` },
+  negativo:{ name: '🔄 Negativo',  body: 'gl_FragColor = vec4(1.0 - texture2D(u_tex, uv).rgb, 1.0);' },
+
+  // Filtro paramétrico del creador 🎨: un "übershader" cuyos controles son
+  // uniforms — así el creador de filtros no necesita recompilar nada
+  custom: { name: '🎨 Filtro personalizado', pre: `
+    uniform float u_pixel, u_poster, u_edge, u_hue, u_sat, u_bright, u_contrast, u_tintw, u_scan, u_noise, u_rgbshift;
+    uniform vec3 u_tint;
+    vec3 hueShift(vec3 c, float a) {
+      const vec3 k = vec3(0.57735);
+      float cosA = cos(a);
+      return c * cosA + cross(k, c) * sin(a) + k * dot(k, c) * (1.0 - cosA);
+    }`, body: `
+    vec2 p = uv;
+    if (u_pixel > 1.0) {
+      vec2 cell = vec2(u_pixel, u_pixel * u_res.y / u_res.x);
+      p = (floor(p * cell) + 0.5) / cell;
+    }
+    vec3 c;
+    if (u_rgbshift > 0.0001) {
+      c = vec3(texture2D(u_tex, p + vec2(u_rgbshift, 0.0)).r, texture2D(u_tex, p).g, texture2D(u_tex, p - vec2(u_rgbshift, 0.0)).b);
+    } else {
+      c = texture2D(u_tex, p).rgb;
+    }
+    c = hueShift(c, u_hue);
+    c = mix(vec3(dot(c, vec3(0.299, 0.587, 0.114))), c, u_sat);
+    c = (c - 0.5) * u_contrast + 0.5;
+    c *= u_bright;
+    if (u_poster > 1.0) c = floor(c * u_poster) / u_poster;
+    if (u_edge > 0.001) {
+      vec2 px = 1.0 / u_res;
+      float gx = length(texture2D(u_tex, p + vec2(px.x, 0.0)).rgb) - length(texture2D(u_tex, p - vec2(px.x, 0.0)).rgb);
+      float gy = length(texture2D(u_tex, p + vec2(0.0, px.y)).rgb) - length(texture2D(u_tex, p - vec2(0.0, px.y)).rgb);
+      c = mix(c, vec3(0.04), smoothstep(0.18, 0.4, length(vec2(gx, gy))) * u_edge);
+    }
+    if (u_tintw > 0.001) c = mix(c, u_tint * (dot(c, vec3(0.299, 0.587, 0.114)) * 1.6 + 0.15), u_tintw);
+    if (u_scan > 0.001) c *= 1.0 - u_scan * 0.4 * (0.5 + 0.5 * sin(uv.y * u_res.y * 3.14159));
+    if (u_noise > 0.001) c += (fract(sin(dot(uv * (u_time + 1.0), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * u_noise;
+    gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);` }
+};
+
+const CAM_PRESETS = [
+  { name: '🎌 Anime',     prompt: 'anime style portrait, cel shading, vibrant colors, detailed anime art', denoise: 0.55 },
+  { name: '🌆 Cyberpunk', prompt: 'cyberpunk character, neon lights, futuristic city, glowing implants', denoise: 0.55 },
+  { name: '🖌 Óleo',      prompt: 'classical oil painting portrait, thick brush strokes, rembrandt lighting', denoise: 0.5 },
+  { name: '🧟 Zombi',     prompt: 'zombie, decaying skin, horror movie makeup, dramatic lighting', denoise: 0.5 },
+  { name: '🗿 Estatua',   prompt: 'marble statue, white carved stone, classical sculpture, museum lighting', denoise: 0.6 },
+  { name: '🎮 Voxel',     prompt: 'voxel art character, blocky 3d render, minecraft style', denoise: 0.65 },
+  { name: '🐉 Fantasía',  prompt: 'fantasy character, ornate armor, magical forest, detailed digital art', denoise: 0.55 },
+  { name: '✏️ Boceto',    prompt: 'pencil sketch, hand drawn, crosshatching, sketchbook drawing', denoise: 0.55 }
+];
+
+// Parámetros del filtro personalizado (uniforms del übershader)
+const FILTER_DEFAULTS = { pixel: 0, poster: 0, edge: 0, hue: 0, sat: 1, bright: 1, contrast: 1, tint: '#7c6cf5', tintw: 0, scan: 0, noise: 0, rgbshift: 0 };
+
+const app = {
+  mode: 'cam', // 'cam' (pestañas Cámara/Filtros) | 'vtuber'
+  stream: null, gl: null, raf: 0, effect: 'none', programs: {}, texture: null,
+  t0: performance.now(),
+  filter: { ...FILTER_DEFAULTS },
+  ai: { on: false, lastImg: null, online: false, ipAdapter: null },
+  ref: { dataUrl: null, img: null },
+  rec: null, recChunks: [],
+  vt: { idle: null, talk: null, talking: false, level: 0, smooth: 0, analyser: null, micData: null, bgImg: null }
+};
+
+// ---------- API de Stable Diffusion ----------
+// Directa (requiere --cors-allow-origins=* en A1111) o, si la página la sirve
+// el lanzador de escritorio (webcam-launcher.js), a través de su proxy
+// /sdproxy — mismo origen, sin flags CORS. Se detecta al arrancar.
+
+let sdProxy = false;
+
+function sdUrl() {
+  return ($('sd-url').value.trim() || 'http://127.0.0.1:7860').replace(/\/+$/, '');
+}
+
+async function detectProxy() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const r = await fetch('/sdproxy/ping', { signal: AbortSignal.timeout(1500) });
+    sdProxy = r.ok || r.status === 204;
+  } catch { sdProxy = false; }
+}
+
+async function sdFetch(path, opts, timeoutMs) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs || 120000);
+  try {
+    if (sdProxy) {
+      const headers = { ...(opts && opts.headers), 'x-sd-url': sdUrl() };
+      return await fetch('/sdproxy' + path, { ...opts, headers, signal: controller.signal });
+    }
+    return await fetch(sdUrl() + path, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+let checkSeq = 0; // descarta resultados de comprobaciones obsoletas (p. ej.
+                  // si el usuario cambia la URL mientras otra sigue en vuelo)
+async function checkBackend() {
+  const seq = ++checkSeq;
+  const el = $('backend');
+  el.textContent = '⏳ detectando…';
+  // ojo: no resetear app.ai.online aquí — el estado anterior sigue siendo el
+  // mejor conocido mientras la comprobación está en vuelo (p. ej. el blur del
+  // campo URL relanza la comprobación justo antes del click en un preset)
+  let online = false;
+  let ipAdapter = null;
+  let label;
+  try {
+    const r = await sdFetch('/sdapi/v1/sd-models', {}, 2500);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await r.json();
+    online = true;
+    try {
+      const m = await sdFetch('/controlnet/model_list', {}, 2500);
+      if (m.ok) {
+        const model = ((await m.json()).model_list || []).find(x => /ip.?adapter/i.test(x));
+        if (model) {
+          let module = 'ip-adapter_clip_sd15';
+          try {
+            const mod = await sdFetch('/controlnet/module_list', {}, 2500);
+            if (mod.ok) module = ((await mod.json()).module_list || []).find(x => /^ip.?adapter/i.test(x)) || module;
+          } catch { /* módulo por defecto */ }
+          ipAdapter = { module, model };
+        }
+      }
+    } catch { /* sin ControlNet */ }
+    label = '🟢 Stable Diffusion' + (ipAdapter ? ' · IP-Adapter ✓' : '');
+  } catch {
+    label = '🔴 SD no responde (solo efectos)';
+  }
+  if (seq !== checkSeq) return; // llegó tarde: hay una comprobación más nueva
+  app.ai.online = online;
+  app.ai.ipAdapter = ipAdapter;
+  el.textContent = label;
+  updateRefHint();
+}
+
+function updateRefHint() {
+  $('ref-hint').textContent = app.ref.dataUrl && app.ai.online && !app.ai.ipAdapter
+    ? 'Sin IP-Adapter (extensión ControlNet): la referencia se funde sobre el fotograma — efecto más suave. Instala ControlNet + un modelo ip-adapter para aplicarla de verdad.'
+    : '';
+}
+
+// ---------- Pipeline WebGL ----------
+
+const CAM_VS = `attribute vec2 a_pos; varying vec2 v_uv;
+void main() { v_uv = vec2(a_pos.x, -a_pos.y) * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
+
+function fragSrc(effect) {
+  return `precision mediump float; varying vec2 v_uv;
+uniform sampler2D u_tex; uniform vec2 u_res; uniform float u_time; uniform float u_mirror;
+${effect.pre || ''}
+void main() {
+  vec2 uv = v_uv;
+  if (u_mirror > 0.5) uv.x = 1.0 - uv.x;
+  ${effect.body}
+}`;
+}
+
+const glCanvas = document.createElement('canvas');
+
+function initGl() {
+  const gl = glCanvas.getContext('webgl', { preserveDrawingBuffer: true });
+  if (!gl) throw new Error('WebGL no disponible en este navegador');
+  app.gl = gl;
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  app.texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, app.texture);
+  for (const [k, v] of [['TEXTURE_WRAP_S', 'CLAMP_TO_EDGE'], ['TEXTURE_WRAP_T', 'CLAMP_TO_EDGE'], ['TEXTURE_MIN_FILTER', 'LINEAR'], ['TEXTURE_MAG_FILTER', 'LINEAR']]) {
+    gl.texParameteri(gl.TEXTURE_2D, gl[k], gl[v]);
+  }
+}
+
+// Compila (con caché) el programa de un efecto. Lanza si el GLSL no compila.
+function program(effect) {
+  if (app.programs[effect]) return app.programs[effect];
+  const gl = app.gl;
+  const compile = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('Shader: ' + gl.getShaderInfoLog(s));
+    return s;
+  };
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, CAM_VS));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fragSrc(CAM_EFFECTS[effect])));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('Program: ' + gl.getProgramInfoLog(p));
+  app.programs[effect] = p;
+  return p;
+}
+
+function renderGl(video) {
+  const gl = app.gl;
+  const w = video.videoWidth, h = video.videoHeight;
+  if (!w) return;
+  if (glCanvas.width !== w) { glCanvas.width = w; glCanvas.height = h; }
+  gl.viewport(0, 0, w, h);
+  const prog = program(app.effect);
+  gl.useProgram(prog);
+  const loc = gl.getAttribLocation(prog, 'a_pos');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  gl.bindTexture(gl.TEXTURE_2D, app.texture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+  const u = n => gl.getUniformLocation(prog, n);
+  gl.uniform2f(u('u_res'), w, h);
+  gl.uniform1f(u('u_time'), (performance.now() - app.t0) / 1000);
+  gl.uniform1f(u('u_mirror'), $('mirror').checked ? 1 : 0);
+  if (app.effect === 'custom') {
+    const f = app.filter;
+    gl.uniform1f(u('u_pixel'), f.pixel);
+    gl.uniform1f(u('u_poster'), f.poster);
+    gl.uniform1f(u('u_edge'), f.edge);
+    gl.uniform1f(u('u_hue'), f.hue * Math.PI / 180);
+    gl.uniform1f(u('u_sat'), f.sat);
+    gl.uniform1f(u('u_bright'), f.bright);
+    gl.uniform1f(u('u_contrast'), f.contrast);
+    gl.uniform1f(u('u_tintw'), f.tintw);
+    gl.uniform1f(u('u_scan'), f.scan);
+    gl.uniform1f(u('u_noise'), f.noise);
+    gl.uniform1f(u('u_rgbshift'), f.rgbshift);
+    const t = f.tint;
+    gl.uniform3f(u('u_tint'), parseInt(t.slice(1, 3), 16) / 255, parseInt(t.slice(3, 5), 16) / 255, parseInt(t.slice(5, 7), 16) / 255);
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// ---------- Bucle de dibujo ----------
+
+function drawCamView(ctx, view) {
+  if (typeof lucyDrawView === 'function' && lucyDrawView(ctx, view)) return;
+  const video = $('video');
+  if (!video.videoWidth) return;
+  renderGl(video);
+  if (view.width !== video.videoWidth) { view.width = video.videoWidth; view.height = video.videoHeight; }
+  if (app.ai.on && app.ai.lastImg) {
+    ctx.drawImage(app.ai.lastImg, 0, 0, view.width, view.height);
+    const pw = view.width / 4;
+    ctx.drawImage(glCanvas, view.width - pw - 8, view.height - pw * view.height / view.width - 8, pw, pw * view.height / view.width);
+  } else {
+    ctx.drawImage(glCanvas, 0, 0);
+  }
+}
+
+// Modo VTuber: fondo (croma/color/cámara/imagen) + avatar reactivo a la voz
+function drawVtuberView(ctx, view) {
+  if (view.width !== 1280) { view.width = 1280; view.height = 720; }
+  const bg = $('vt-bg').value;
+  if (bg === 'green') {
+    ctx.fillStyle = '#00ff00';
+    ctx.fillRect(0, 0, view.width, view.height);
+  } else if (bg === 'color') {
+    ctx.fillStyle = $('vt-bg-color').value;
+    ctx.fillRect(0, 0, view.width, view.height);
+  } else if (bg === 'image' && app.vt.bgImg) {
+    ctx.drawImage(app.vt.bgImg, 0, 0, view.width, view.height);
+  } else if (bg === 'cam') {
+    const video = $('video');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, view.width, view.height);
+    if (video.videoWidth) {
+      renderGl(video);
+      const src = app.ai.on && app.ai.lastImg ? app.ai.lastImg : glCanvas;
+      ctx.drawImage(src, 0, 0, view.width, view.height);
+    }
+  } else {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, view.width, view.height);
+  }
+
+  updateMic();
+  const t = (performance.now() - app.t0) / 1000;
+  // Avatar 3D VRM (si está cargado, tiene prioridad sobre las imágenes PNG)
+  if (typeof vrmDraw === 'function' && vrmDraw(ctx, view, t)) return;
+  const img = app.vt.talking && app.vt.talk ? app.vt.talk : app.vt.idle;
+  if (!img) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(view.width / 2 - 260, view.height / 2 - 26, 520, 52);
+    ctx.fillStyle = '#fff';
+    ctx.font = '22px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('Carga tu avatar: imagen PNG o modelo 3D .vrm →', view.width / 2, view.height / 2 + 8);
+    return;
+  }
+  const scale = (view.height * Number($('vt-size').value)) / img.height;
+  const w = img.width * scale, h = img.height * scale;
+  // respiración en reposo + rebote al hablar (si no hay imagen "hablando")
+  let dy = Math.sin(t * 1.6) * 4;
+  if (app.vt.talking && $('vt-bounce').checked && !app.vt.talk) dy -= Math.abs(Math.sin(t * 16)) * 22;
+  else if (app.vt.talking && $('vt-bounce').checked) dy -= Math.abs(Math.sin(t * 16)) * 8;
+  ctx.drawImage(img, (view.width - w) / 2, view.height - h + 10 + dy, w, h);
+}
+
+function drawLoop() {
+  const view = $('view');
+  const ctx = view.getContext('2d');
+  try {
+    if (app.mode === 'vtuber') drawVtuberView(ctx, view);
+    else drawCamView(ctx, view);
+  } catch (err) {
+    // un shader roto no debe matar el bucle de dibujo: caer a 'none'
+    app.effect = 'none';
+    $('effect').value = 'none';
+    setStatus('⚠ ' + err.message.split('\n')[0].slice(0, 160));
+  }
+  app.raf = requestAnimationFrame(drawLoop);
+}
+
+// ---------- Micrófono (PNGTuber) ----------
+
+async function initMic() {
+  if (app.vt.analyser) return;
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const ac = new (window.AudioContext || window.webkitAudioContext)();
+  const src = ac.createMediaStreamSource(stream);
+  const an = ac.createAnalyser();
+  an.fftSize = 512;
+  src.connect(an);
+  app.vt.analyser = an;
+  app.vt.micData = new Uint8Array(an.fftSize);
+}
+
+function updateMic() {
+  const an = app.vt.analyser;
+  if (!an) return;
+  an.getByteTimeDomainData(app.vt.micData);
+  let sum = 0;
+  for (const v of app.vt.micData) { const d = (v - 128) / 128; sum += d * d; }
+  const rms = Math.sqrt(sum / app.vt.micData.length);
+  app.vt.smooth = app.vt.smooth * 0.7 + rms * 0.3; // suavizado (ataque/caída)
+  const threshold = 0.09 - Number($('vt-sens').value) * 0.085; // sensibilidad → umbral
+  app.vt.talking = app.vt.smooth > threshold;
+  $('mic-meter').firstElementChild.style.width = Math.min(100, app.vt.smooth * 600) + '%';
+}
+
+// ---------- Bucle IA (img2img directo contra la API) ----------
+
+function grabFrame() {
+  const w0 = glCanvas.width, h0 = glCanvas.height;
+  if (!w0) return null;
+  const scale = 512 / Math.max(w0, h0);
+  const w = Math.max(64, Math.round(w0 * scale / 8) * 8);
+  const h = Math.max(64, Math.round(h0 * scale / 8) * 8);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(glCanvas, 0, 0, w, h);
+  if (app.ref.img && !app.ai.ipAdapter) {
+    ctx.globalAlpha = Number($('ref-weight').value) * 0.5;
+    ctx.drawImage(app.ref.img, 0, 0, w, h);
+    ctx.globalAlpha = 1;
+  }
+  return { b64: c.toDataURL('image/jpeg', 0.85).split(',')[1], w, h };
+}
+
+async function aiLoop() {
+  while (app.ai.on) {
+    const frame = grabFrame();
+    if (!frame) { await new Promise(r => setTimeout(r, 200)); continue; }
+    const payload = {
+      init_images: [frame.b64],
+      prompt: $('prompt').value.trim(),
+      negative_prompt: 'blurry, low quality, deformed',
+      denoising_strength: Number($('denoise').value),
+      steps: Number($('steps').value),
+      width: frame.w, height: frame.h,
+      cfg_scale: 7
+    };
+    if (app.ref.dataUrl && app.ai.ipAdapter) {
+      payload.alwayson_scripts = { controlnet: { args: [{
+        enabled: true, module: app.ai.ipAdapter.module, model: app.ai.ipAdapter.model,
+        image: app.ref.dataUrl.split(',')[1], weight: Number($('ref-weight').value),
+        resize_mode: 1, pixel_perfect: true
+      }] } };
+    }
+    const t0 = performance.now();
+    try {
+      const r = await sdFetch('/sdapi/v1/img2img', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      if (!r.ok) throw new Error('Stable Diffusion HTTP ' + r.status);
+      const json = await r.json();
+      if (!json.images || !json.images.length) throw new Error('Stable Diffusion no devolvió imágenes');
+      const img = new Image();
+      img.src = 'data:image/png;base64,' + json.images[0];
+      await img.decode();
+      app.ai.lastImg = img;
+      const lat = (performance.now() - t0) / 1000;
+      setStatus('🤖 IA en vivo · ' + lat.toFixed(1) + ' s/fotograma (' + (1 / lat).toFixed(1) + ' fps)');
+    } catch (err) {
+      setAi(false);
+      setStatus('⚠ ' + (err.name === 'AbortError' ? 'Stable Diffusion no responde' : err.message));
+      break;
+    }
+  }
+  if (!app.ai.on) app.ai.lastImg = null;
+}
+
+function setAi(on) {
+  app.ai.on = on;
+  $('ai').checked = on;
+  if (on) { setStatus('🤖 generando primer fotograma…'); aiLoop(); }
+  else { app.ai.lastImg = null; setStatus(''); }
+}
+
+function setStatus(text) {
+  $('status').textContent = text;
+  $('status').classList.toggle('hidden', !text);
+}
+
+// ---------- Cámara ----------
+
+async function listDevices() {
+  const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+  const sel = $('device');
+  const current = sel.value;
+  sel.innerHTML = '';
+  devices.forEach((d, i) => {
+    const o = document.createElement('option');
+    o.value = d.deviceId;
+    o.textContent = d.label || 'Cámara ' + (i + 1);
+    sel.appendChild(o);
+  });
+  if (current) sel.value = current;
+}
+
+async function startCam(deviceId) {
+  if (app.stream) for (const t of app.stream.getTracks()) t.stop();
+  app.stream = await navigator.mediaDevices.getUserMedia({
+    video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: false
+  });
+  $('video').srcObject = app.stream;
+  await listDevices();
+}
+
+// ---------- Skins IA (presets del usuario) ----------
+
+function applyStyle(p) {
+  $('prompt').value = p.prompt || '';
+  if (p.denoise) { $('denoise').value = p.denoise; $('denoise-val').textContent = p.denoise; }
+  if (p.steps) { $('steps').value = p.steps; $('steps-val').textContent = p.steps; }
+  if (p.effect && CAM_EFFECTS[p.effect]) { app.effect = p.effect; $('effect').value = p.effect; }
+  if (typeof lucyPromptChanged === 'function') lucyPromptChanged();
+  if (p.ref) {
+    const img = new Image();
+    img.src = p.ref;
+    img.decode().then(() => {
+      app.ref = { dataUrl: p.ref, img };
+      $('ref-preview').src = p.ref;
+      $('ref-preview').classList.remove('hidden');
+      $('btn-ref-clear').classList.remove('hidden');
+      updateRefHint();
+    }).catch(() => {});
+  }
+  if (!app.ai.on && app.ai.online) setAi(true);
+}
+
+function renderPresets() {
+  const cont = $('presets');
+  cont.innerHTML = '';
+  for (const p of CAM_PRESETS) {
+    const chip = document.createElement('button');
+    chip.className = 'chip';
+    chip.textContent = p.name;
+    chip.onclick = () => applyStyle(p);
+    cont.appendChild(chip);
+  }
+}
+
+function store(key) {
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+}
+
+function renderChipList(contId, key, onApply) {
+  const cont = $(contId);
+  cont.innerHTML = '';
+  const list = store(key);
+  if (!list.length) {
+    cont.innerHTML = '<span class="hint">Nada guardado todavía.</span>';
+    return;
+  }
+  list.forEach((s, i) => {
+    const chip = document.createElement('button');
+    chip.className = 'chip skin';
+    const name = document.createElement('span');
+    name.textContent = s.name;
+    const del = document.createElement('span');
+    del.className = 'del';
+    del.title = 'Eliminar';
+    del.textContent = '✕';
+    chip.append(name, del);
+    chip.onclick = e => {
+      if (e.target === del) {
+        list.splice(i, 1);
+        localStorage.setItem(key, JSON.stringify(list));
+        renderChipList(contId, key, onApply);
+      } else onApply(s);
+    };
+    cont.appendChild(chip);
+  });
+}
+
+const renderSkins = () => renderChipList('skins', 'dedlit.webcam.skins', applyStyle);
+
+// Reduce una imagen a miniatura (para que los skins con referencia quepan en localStorage)
+function thumbnail(img, max) {
+  const scale = Math.min(1, max / Math.max(img.width, img.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.width * scale);
+  c.height = Math.round(img.height * scale);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.8);
+}
+
+function saveSkin() {
+  const name = prompt('Nombre del skin:', '');
+  if (!name || !name.trim()) return;
+  const list = store('dedlit.webcam.skins');
+  list.push({
+    name: name.trim().slice(0, 30),
+    prompt: $('prompt').value.trim(),
+    denoise: Number($('denoise').value),
+    steps: Number($('steps').value),
+    effect: app.effect,
+    ref: app.ref.img ? thumbnail(app.ref.img, 384) : undefined
+  });
+  localStorage.setItem('dedlit.webcam.skins', JSON.stringify(list.slice(0, 50)));
+  renderSkins();
+}
+
+// ---------- 🎨 Creador de filtros ----------
+
+const FILTER_IDS = ['pixel', 'poster', 'edge', 'hue', 'sat', 'bright', 'contrast', 'tintw', 'scan', 'noise', 'rgbshift'];
+
+function syncFilterControls() {
+  for (const id of FILTER_IDS) {
+    const el = $('f-' + id);
+    el.value = app.filter[id];
+    const out = el.closest('.slider-row').querySelector('output');
+    if (out) out.textContent = el.value;
+  }
+  $('f-tint').value = app.filter.tint;
+}
+
+function applyFilter(f) {
+  if (f.glsl) {
+    // filtro GLSL guardado: compilarlo bajo un id propio
+    CAM_EFFECTS.glsl = { name: '🧪 ' + f.name, body: f.glsl };
+    delete app.programs.glsl;
+    tryEffect('glsl');
+    $('glsl-code').value = f.glsl;
+    return;
+  }
+  app.filter = { ...FILTER_DEFAULTS, ...f.params };
+  syncFilterControls();
+  tryEffect('custom');
+}
+
+const renderFilters = () => renderChipList('filters', 'dedlit.webcam.filters', applyFilter);
+
+function saveFilter() {
+  const name = prompt('Nombre del filtro:', '');
+  if (!name || !name.trim()) return;
+  const list = store('dedlit.webcam.filters');
+  list.push({ name: name.trim().slice(0, 30), params: { ...app.filter } });
+  localStorage.setItem('dedlit.webcam.filters', JSON.stringify(list.slice(0, 50)));
+  renderFilters();
+}
+
+// Cambia el efecto activo comprobando que compila; si no, avisa y no rompe el bucle
+function tryEffect(id) {
+  const prev = app.effect;
+  app.effect = id;
+  try {
+    program(id);
+    if ($('effect').value !== id && CAM_EFFECTS[id] && id !== 'glsl') $('effect').value = id;
+    if (!$('status').textContent.startsWith('🤖')) setStatus('');
+    return true;
+  } catch (err) {
+    // si el efecto roto era ya el activo, caer a 'none' (no volver al roto)
+    app.effect = prev === id ? 'none' : prev;
+    if (prev === id) $('effect').value = 'none';
+    delete app.programs[id];
+    setStatus('⚠ El shader no compila: ' + err.message.split('\n')[0].slice(0, 160));
+    return false;
+  }
+}
+
+// ---------- Captura y grabación ----------
+
+function snapshot() {
+  const a = document.createElement('a');
+  a.href = $('view').toDataURL('image/png');
+  a.download = 'dedlit-webcam-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.png';
+  a.click();
+  setStatus('📸 Fotograma descargado');
+  setTimeout(() => { if (!app.ai.on) setStatus(''); }, 2500);
+}
+
+function toggleRec(btn) {
+  if (app.rec && app.rec.state !== 'inactive') { app.rec.stop(); return; }
+  if (!('MediaRecorder' in window)) { setStatus('⚠ Este navegador no soporta grabación'); return; }
+  app.recChunks = [];
+  const rec = new MediaRecorder($('view').captureStream(30), { mimeType: 'video/webm' });
+  rec.ondataavailable = e => { if (e.data.size) app.recChunks.push(e.data); };
+  rec.onstop = () => {
+    for (const b of [$('btn-rec'), $('btn-vt-rec')]) { b.textContent = '⏺ Grabar'; b.classList.remove('recording'); }
+    if (!app.recChunks.length) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(app.recChunks, { type: 'video/webm' }));
+    a.download = 'dedlit-webcam-' + Date.now() + '.webm';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  rec.start();
+  app.rec = rec;
+  btn.textContent = '⏹ Parar';
+  btn.classList.add('recording');
+}
+
+// Ventana limpia con solo el vídeo, para capturar en OBS (Captura de ventana)
+function openObsWindow() {
+  const w = window.open('', 'dedlit-webcam-obs', 'width=1280,height=720');
+  if (!w) { setStatus('⚠ El navegador bloqueó la ventana emergente'); return; }
+  w.document.title = 'DEDLIT Webcam — salida';
+  w.document.body.style.cssText = 'margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh';
+  let video = w.document.querySelector('video');
+  if (!video) {
+    video = w.document.createElement('video');
+    video.autoplay = true;
+    video.muted = true;
+    video.style.cssText = 'max-width:100%;max-height:100%';
+    w.document.body.appendChild(video);
+  }
+  video.srcObject = $('view').captureStream(30);
+}
+
+// ---------- Selector de imagen reutilizable ----------
+
+function pickImage(fileInputId, onReady) {
+  const input = $(fileInputId);
+  input.onchange = async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const dataUrl = await new Promise((ok, ko) => {
+      const r = new FileReader();
+      r.onload = () => ok(r.result);
+      r.onerror = ko;
+      r.readAsDataURL(file);
+    });
+    const img = new Image();
+    img.src = dataUrl;
+    await img.decode();
+    onReady(img, dataUrl);
+  };
+  input.click();
+}
+
+// ---------- Pestañas ----------
+
+function setTab(tab) {
+  for (const t of ['cam', 'filter', 'vtuber']) {
+    $('tab-' + t).classList.toggle('active', t === tab);
+    $('panel-' + t).classList.toggle('hidden', t !== tab);
+  }
+  app.mode = tab === 'vtuber' ? 'vtuber' : 'cam';
+  if (tab === 'filter') tryEffect('custom');
+  if (tab === 'vtuber') initMic().catch(err => setStatus('⚠ Micrófono: ' + err.message));
+}
+
+// ---------- Eventos y arranque ----------
+
+function fillEffectSelect() {
+  const sel = $('effect');
+  sel.innerHTML = '';
+  for (const [id, e] of Object.entries(CAM_EFFECTS)) {
+    if (id === 'glsl') continue;
+    const o = document.createElement('option');
+    o.value = id;
+    o.textContent = e.name;
+    sel.appendChild(o);
+  }
+}
+
+fillEffectSelect();
+$('effect').onchange = () => tryEffect($('effect').value);
+
+$('tab-cam').onclick = () => setTab('cam');
+$('tab-filter').onclick = () => setTab('filter');
+$('tab-vtuber').onclick = () => setTab('vtuber');
+
+$('sd-url').value = localStorage.getItem('dedlit.webcam.sdurl') || '';
+$('sd-url').onchange = () => {
+  localStorage.setItem('dedlit.webcam.sdurl', $('sd-url').value.trim());
+  checkBackend();
+};
+$('btn-check').onclick = checkBackend;
+$('device').onchange = () => startCam($('device').value).catch(err => setStatus('⚠ ' + err.message));
+$('ai').onchange = () => {
+  if ($('ai').checked && !app.ai.online) {
+    $('ai').checked = false;
+    setStatus('⚠ Stable Diffusion no responde: arráncalo con --api --cors-allow-origins=*');
+    return;
+  }
+  setAi($('ai').checked);
+};
+for (const [id, out] of [['denoise', 'denoise-val'], ['steps', 'steps-val'], ['ref-weight', 'ref-weight-val']]) {
+  $(id).oninput = () => { $(out).textContent = $(id).value; };
+}
+
+$('btn-ref').onclick = () => pickImage('ref-file', (img, dataUrl) => {
+  app.ref = { dataUrl, img };
+  $('ref-preview').src = dataUrl;
+  $('ref-preview').classList.remove('hidden');
+  $('btn-ref-clear').classList.remove('hidden');
+  updateRefHint();
+  if (typeof lucyRefChanged === 'function') lucyRefChanged();
+});
+$('btn-ref-clear').onclick = () => {
+  app.ref = { dataUrl: null, img: null };
+  $('ref-preview').classList.add('hidden');
+  $('btn-ref-clear').classList.add('hidden');
+  updateRefHint();
+  if (typeof lucyRefChanged === 'function') lucyRefChanged();
+};
+$('btn-skin-save').onclick = saveSkin;
+$('btn-shot').onclick = snapshot;
+$('btn-rec').onclick = () => toggleRec($('btn-rec'));
+
+// Creador de filtros: cada control actualiza el übershader en vivo
+for (const id of FILTER_IDS) {
+  $('f-' + id).oninput = e => {
+    app.filter[id] = Number(e.target.value);
+    const out = e.target.closest('.slider-row').querySelector('output');
+    if (out) out.textContent = e.target.value;
+    if (app.effect !== 'custom') tryEffect('custom');
+  };
+}
+$('f-tint').oninput = e => {
+  app.filter.tint = e.target.value;
+  if (app.effect !== 'custom') tryEffect('custom');
+};
+$('btn-filter-reset').onclick = () => {
+  app.filter = { ...FILTER_DEFAULTS };
+  syncFilterControls();
+  tryEffect('custom');
+};
+$('btn-filter-save').onclick = saveFilter;
+$('btn-glsl-try').onclick = () => {
+  CAM_EFFECTS.glsl = { name: '🧪 GLSL', body: $('glsl-code').value };
+  delete app.programs.glsl;
+  tryEffect('glsl');
+};
+$('btn-glsl-save').onclick = () => {
+  CAM_EFFECTS.glsl = { name: '🧪 GLSL', body: $('glsl-code').value };
+  delete app.programs.glsl;
+  if (!tryEffect('glsl')) return;
+  const name = prompt('Nombre del filtro GLSL:', '');
+  if (!name || !name.trim()) return;
+  const list = store('dedlit.webcam.filters');
+  list.push({ name: name.trim().slice(0, 30), glsl: $('glsl-code').value });
+  localStorage.setItem('dedlit.webcam.filters', JSON.stringify(list.slice(0, 50)));
+  renderFilters();
+};
+
+// VTuber
+$('btn-av-idle').onclick = () => pickImage('av-idle-file', (img, dataUrl) => {
+  app.vt.idle = img;
+  $('av-idle-preview').src = dataUrl;
+  $('av-idle-preview').classList.remove('hidden');
+});
+$('btn-av-talk').onclick = () => pickImage('av-talk-file', (img, dataUrl) => {
+  app.vt.talk = img;
+  $('av-talk-preview').src = dataUrl;
+  $('av-talk-preview').classList.remove('hidden');
+});
+$('vt-bg').onchange = () => {
+  const v = $('vt-bg').value;
+  $('vt-bg-color').classList.toggle('hidden', v !== 'color');
+  $('btn-vt-bg-img').classList.toggle('hidden', v !== 'image');
+  $('vt-bg-preview').classList.toggle('hidden', v !== 'image' || !app.vt.bgImg);
+};
+$('btn-vt-bg-img').onclick = () => pickImage('vt-bg-file', (img, dataUrl) => {
+  app.vt.bgImg = img;
+  $('vt-bg-preview').src = dataUrl;
+  $('vt-bg-preview').classList.remove('hidden');
+});
+for (const id of ['vt-sens', 'vt-size']) {
+  $(id).oninput = e => { e.target.closest('.slider-row').querySelector('output').textContent = e.target.value; };
+}
+$('btn-obs').onclick = openObsWindow;
+$('btn-vt-rec').onclick = () => toggleRec($('btn-vt-rec'));
+
+(async () => {
+  renderPresets();
+  renderSkins();
+  renderFilters();
+  syncFilterControls();
+  await detectProxy();
+  if (sdProxy) {
+    $('setup-hint').innerHTML = 'Para el restilizado IA arranca Stable Diffusion WebUI (Automatic1111 / SD.Next / Forge) con <code>--api</code> — sin flags CORS: el lanzador hace de proxy. Los efectos y filtros funcionan siempre, sin nada más. Nada sale de tu equipo.';
+  }
+  checkBackend();
+  try {
+    initGl();
+    await startCam();
+  } catch (err) {
+    setStatus('⚠ No se pudo abrir la cámara: ' + err.message);
+  }
+  drawLoop(); // el bucle corre siempre: el modo VTuber no necesita webcam
+})();
+</script>
+
+<script>
+'use strict';
+/* ---------- Mini-motor VRM (WebGL2, sin dependencias) ----------
+   Renderiza avatares .vrm (VRM 0.x y 1.0) para el modo VTuber: subconjunto
+   de glTF/GLB con mallas skinned, texturas baseColor, morph targets para las
+   expresiones estándar (aa/blink) y el esqueleto humanoide normalizado del
+   estándar VRM. La boca se mueve con el micrófono, el avatar parpadea y se
+   balancea, y puede reproducir animaciones .vrma (VRMC_vrm_animation) de
+   forma experimental. No es un visor glTF completo: MToon se aproxima como
+   unlit texturizado, sin spring bones ni iluminación. */
+
+// ---------- Álgebra mínima (mat4 por columnas, cuaterniones xyzw) ----------
+
+function m4ident() { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
+
+function m4mul(a, b, out) {
+  out = out || new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    const b0 = b[c*4], b1 = b[c*4+1], b2 = b[c*4+2], b3 = b[c*4+3];
+    out[c*4]   = a[0]*b0 + a[4]*b1 + a[8]*b2  + a[12]*b3;
+    out[c*4+1] = a[1]*b0 + a[5]*b1 + a[9]*b2  + a[13]*b3;
+    out[c*4+2] = a[2]*b0 + a[6]*b1 + a[10]*b2 + a[14]*b3;
+    out[c*4+3] = a[3]*b0 + a[7]*b1 + a[11]*b2 + a[15]*b3;
+  }
+  return out;
+}
+
+function m4fromTRS(t, q, s, out) {
+  out = out || new Float32Array(16);
+  const [x, y, z, w] = q;
+  const x2 = x+x, y2 = y+y, z2 = z+z;
+  const xx = x*x2, xy = x*y2, xz = x*z2, yy = y*y2, yz = y*z2, zz = z*z2, wx = w*x2, wy = w*y2, wz = w*z2;
+  out[0] = (1-(yy+zz))*s[0]; out[1] = (xy+wz)*s[0]; out[2] = (xz-wy)*s[0]; out[3] = 0;
+  out[4] = (xy-wz)*s[1]; out[5] = (1-(xx+zz))*s[1]; out[6] = (yz+wx)*s[1]; out[7] = 0;
+  out[8] = (xz+wy)*s[2]; out[9] = (yz-wx)*s[2]; out[10] = (1-(xx+yy))*s[2]; out[11] = 0;
+  out[12] = t[0]; out[13] = t[1]; out[14] = t[2]; out[15] = 1;
+  return out;
+}
+
+function m4perspective(fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2);
+  const out = new Float32Array(16);
+  out[0] = f / aspect; out[5] = f;
+  out[10] = (far + near) / (near - far); out[11] = -1;
+  out[14] = 2 * far * near / (near - far);
+  return out;
+}
+
+function m4lookAt(eye, center) {
+  let zx = eye[0]-center[0], zy = eye[1]-center[1], zz = eye[2]-center[2];
+  let l = Math.hypot(zx, zy, zz); zx /= l; zy /= l; zz /= l;
+  let xx = -zz, xz = zx; // up = (0,1,0)
+  l = Math.hypot(xx, xz) || 1; xx /= l; xz /= l;
+  const yx = zy*xz, yy = zz*xx - zx*xz, yz = -zy*xx;
+  return new Float32Array([
+    xx, yx, zx, 0,  0, yy, zy, 0,  xz, yz, zz, 0,
+    -(xx*eye[0] + xz*eye[2]), -(yx*eye[0] + yy*eye[1] + yz*eye[2]), -(zx*eye[0] + zy*eye[1] + zz*eye[2]), 1
+  ]);
+}
+
+function qmul(a, b) {
+  return [
+    a[3]*b[0] + a[0]*b[3] + a[1]*b[2] - a[2]*b[1],
+    a[3]*b[1] - a[0]*b[2] + a[1]*b[3] + a[2]*b[0],
+    a[3]*b[2] + a[0]*b[1] - a[1]*b[0] + a[2]*b[3],
+    a[3]*b[3] - a[0]*b[0] - a[1]*b[1] - a[2]*b[2]
+  ];
+}
+
+function qaxis(axis, rad) {
+  const s = Math.sin(rad / 2);
+  return [axis[0]*s, axis[1]*s, axis[2]*s, Math.cos(rad / 2)];
+}
+
+function qnlerp(a, b, t) {
+  let dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
+  const sg = dot < 0 ? -1 : 1;
+  const out = [a[0] + t*(sg*b[0]-a[0]), a[1] + t*(sg*b[1]-a[1]), a[2] + t*(sg*b[2]-a[2]), a[3] + t*(sg*b[3]-a[3])];
+  const l = Math.hypot(...out) || 1;
+  return out.map(v => v / l);
+}
+
+// ---------- Parse GLB / glTF ----------
+
+function parseGlb(buf) {
+  const dv = new DataView(buf);
+  if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('No es un archivo GLB/VRM');
+  let off = 12, json = null, bin = null;
+  while (off < buf.byteLength) {
+    const len = dv.getUint32(off, true);
+    const type = dv.getUint32(off + 4, true);
+    const chunk = buf.slice(off + 8, off + 8 + len);
+    if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(chunk));
+    else if (type === 0x004E4942) bin = chunk;
+    off += 8 + len + (len % 4 ? 4 - len % 4 : 0);
+  }
+  if (!json) throw new Error('GLB sin chunk JSON');
+  return { json, bin };
+}
+
+const GLTF_CT = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array };
+const GLTF_NC = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+
+function accData(json, bin, i) {
+  const a = json.accessors[i];
+  const n = GLTF_NC[a.type] * a.count;
+  const T = GLTF_CT[a.componentType];
+  let out;
+  if (a.bufferView === undefined) {
+    out = new T(n); // base de ceros (morphs sparse)
+  } else {
+    const bv = json.bufferViews[a.bufferView];
+    const start = (bv.byteOffset || 0) + (a.byteOffset || 0);
+    if (bv.byteStride && bv.byteStride !== GLTF_NC[a.type] * T.BYTES_PER_ELEMENT) {
+      out = new T(n); // entrelazado: desenrollar
+      const comp = GLTF_NC[a.type];
+      for (let e = 0; e < a.count; e++) {
+        const src = new T(bin, start + e * bv.byteStride, comp);
+        out.set(src, e * comp);
+      }
+    } else {
+      out = new T(bin.slice(start, start + n * T.BYTES_PER_ELEMENT));
+    }
+  }
+  if (a.sparse) {
+    const si = a.sparse.indices, sv = a.sparse.values;
+    const IT = GLTF_CT[si.componentType];
+    const ibv = json.bufferViews[si.bufferView];
+    const idx = new IT(bin.slice((ibv.byteOffset || 0) + (si.byteOffset || 0), (ibv.byteOffset || 0) + (si.byteOffset || 0) + a.sparse.count * IT.BYTES_PER_ELEMENT));
+    const vbv = json.bufferViews[sv.bufferView];
+    const comp = GLTF_NC[a.type];
+    const vals = new T(bin.slice((vbv.byteOffset || 0) + (sv.byteOffset || 0), (vbv.byteOffset || 0) + (sv.byteOffset || 0) + a.sparse.count * comp * T.BYTES_PER_ELEMENT));
+    for (let e = 0; e < a.sparse.count; e++) {
+      for (let c = 0; c < comp; c++) out[idx[e] * comp + c] = vals[e * comp + c];
+    }
+  }
+  return out;
+}
+
+// ---------- Estado y renderizador ----------
+
+const vrm = {
+  gl: null, canvas: null, prog: null, model: null, flip: false,
+  blink: { next: 1.5, w: 0 }, aa: 0,
+  anim: null // { channels, duration, start, hipsScale }
+};
+
+const VRM_VS = `#version 300 es
+layout(location=0) in vec3 a_pos;
+layout(location=1) in vec2 a_uv;
+layout(location=2) in vec4 a_joints;
+layout(location=3) in vec4 a_weights;
+uniform mat4 u_vp, u_model;
+uniform float u_skinned;
+uniform sampler2D u_joints;
+out vec2 v_uv;
+mat4 jm(float j) {
+  int x = int(j) * 4;
+  return mat4(texelFetch(u_joints, ivec2(x, 0), 0), texelFetch(u_joints, ivec2(x + 1, 0), 0),
+              texelFetch(u_joints, ivec2(x + 2, 0), 0), texelFetch(u_joints, ivec2(x + 3, 0), 0));
+}
+void main() {
+  mat4 m = u_model;
+  if (u_skinned > 0.5) {
+    m = jm(a_joints.x) * a_weights.x + jm(a_joints.y) * a_weights.y +
+        jm(a_joints.z) * a_weights.z + jm(a_joints.w) * a_weights.w;
+  }
+  v_uv = a_uv;
+  gl_Position = u_vp * m * vec4(a_pos, 1.0);
+}`;
+
+const VRM_FS = `#version 300 es
+precision mediump float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec4 u_color;
+uniform float u_cutoff;
+out vec4 o;
+void main() {
+  vec4 c = texture(u_tex, v_uv) * u_color;
+  if (c.a < u_cutoff) discard;
+  o = c;
+}`;
+
+function vrmInitGl() {
+  if (vrm.gl) return;
+  vrm.canvas = document.createElement('canvas');
+  vrm.canvas.width = 1280; vrm.canvas.height = 720;
+  const gl = vrm.canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: false });
+  if (!gl) throw new Error('WebGL2 no disponible (necesario para avatares VRM)');
+  vrm.gl = gl;
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, VRM_VS));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, VRM_FS));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  vrm.prog = p;
+  vrm.u = {};
+  for (const n of ['u_vp', 'u_model', 'u_skinned', 'u_joints', 'u_tex', 'u_color', 'u_cutoff']) vrm.u[n] = gl.getUniformLocation(p, n);
+  // textura blanca 1x1 para materiales sin textura
+  vrm.whiteTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, vrm.whiteTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+}
+
+// Mapa humanoide: nombre de hueso VRM → índice de nodo (VRM 0.x y 1.0)
+function humanoidMap(json) {
+  const map = {};
+  const v0 = json.extensions?.VRM;
+  if (v0?.humanoid?.humanBones) {
+    for (const b of v0.humanoid.humanBones) map[b.bone] = b.node;
+    return { map, version: 0 };
+  }
+  const v1 = json.extensions?.VRMC_vrm;
+  if (v1?.humanoid?.humanBones) {
+    for (const [bone, def] of Object.entries(v1.humanoid.humanBones)) map[bone] = def.node;
+    return { map, version: 1 };
+  }
+  return { map, version: -1 };
+}
+
+// Expresiones estándar → binds de morphs [{prim, morph, w}] (aa y blink)
+function expressionBinds(json, primsByMeshNode) {
+  const out = { aa: [], blink: [] };
+  const push = (name, meshPrims, morph, w) => {
+    if (!out[name] || !meshPrims) return;
+    for (const prim of meshPrims) {
+      if (prim.morphs.length > morph) out[name].push({ prim, morph, w });
+    }
+  };
+  const v0 = json.extensions?.VRM;
+  if (v0?.blendShapeMaster?.blendShapeGroups) {
+    for (const g of v0.blendShapeMaster.blendShapeGroups) {
+      const preset = (g.presetName || g.name || '').toLowerCase();
+      const key = preset === 'a' || preset === 'aa' ? 'aa' : preset === 'blink' ? 'blink' : null;
+      for (const b of (key && g.binds) || []) push(key, primsByMeshNode.mesh[b.mesh], b.index, (b.weight ?? 100) / 100);
+    }
+  }
+  const v1 = json.extensions?.VRMC_vrm;
+  if (v1?.expressions?.preset) {
+    for (const [name, def] of Object.entries(v1.expressions.preset)) {
+      const key = name === 'aa' ? 'aa' : name === 'blink' ? 'blink' : null;
+      for (const b of (key && def.morphTargetBinds) || []) push(key, primsByMeshNode.node[b.node], b.index, b.weight ?? 1);
+    }
+  }
+  return out;
+}
+
+async function vrmLoad(buf) {
+  vrmInitGl();
+  const gl = vrm.gl;
+  if (vrm.model) vrmDestroy();
+  const { json, bin } = parseGlb(buf);
+  const { map: bones, version } = humanoidMap(json);
+  if (version < 0) throw new Error('El archivo no es un VRM (falta la extensión de humanoide)');
+
+  // Nodos
+  const nodes = (json.nodes || []).map(n => ({
+    t: n.translation || [0, 0, 0],
+    r: n.rotation || [0, 0, 0, 1],
+    s: n.scale || [1, 1, 1],
+    mesh: n.mesh, skin: n.skin, children: n.children || [],
+    pose: null, world: m4ident()
+  }));
+  const roots = new Set(nodes.map((_, i) => i));
+  nodes.forEach(n => n.children.forEach(c => roots.delete(c)));
+
+  // Texturas (async, con fallback a blanca mientras cargan)
+  const textures = (json.textures || []).map(() => vrm.whiteTex);
+  const texJobs = (json.textures || []).map(async (t, i) => {
+    const img = json.images?.[t.source];
+    if (!img || img.bufferView === undefined) return;
+    const bv = json.bufferViews[img.bufferView];
+    const blob = new Blob([new Uint8Array(bin, bv.byteOffset || 0, bv.byteLength)], { type: img.mimeType || 'image/png' });
+    const bmp = await createImageBitmap(blob);
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bmp);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    textures[i] = tex;
+    bmp.close();
+  });
+
+  // Materiales
+  const materials = (json.materials || []).map(m => ({
+    tex: m.pbrMetallicRoughness?.baseColorTexture?.index,
+    color: m.pbrMetallicRoughness?.baseColorFactor || [1, 1, 1, 1],
+    blend: m.alphaMode === 'BLEND',
+    cutoff: m.alphaMode === 'MASK' ? (m.alphaCutoff ?? 0.5) : 0.01,
+    doubleSided: !!m.doubleSided
+  }));
+  if (!materials.length) materials.push({ tex: undefined, color: [1, 1, 1, 1], blend: false, cutoff: 0.01, doubleSided: true });
+
+  // Skins (matriz de articulaciones en textura RGBA32F)
+  const skins = (json.skins || []).map(s => {
+    const ibm = s.inverseBindMatrices !== undefined ? accData(json, bin, s.inverseBindMatrices) : null;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    return { joints: s.joints, ibm, tex, data: new Float32Array(s.joints.length * 16) };
+  });
+
+  // Mallas → primitivas con VAO; morphs solo si el archivo los usa
+  const prims = [];
+  const primsByMeshNode = { mesh: {}, node: {} };
+  nodes.forEach((node, ni) => {
+    if (node.mesh === undefined) return;
+    const mesh = json.meshes[node.mesh];
+    const list = [];
+    for (const p of mesh.primitives) {
+      const pos = accData(json, bin, p.attributes.POSITION);
+      const count = json.accessors[p.attributes.POSITION].count;
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      const posBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+      const attach = (loc, acc, size, normalized) => {
+        if (acc === undefined) { gl.disableVertexAttribArray(loc); return; }
+        const data = accData(json, bin, acc);
+        const buf2 = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf2);
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(loc);
+        const ct = json.accessors[acc].componentType;
+        gl.vertexAttribPointer(loc, size, ct, normalized && ct !== 5126, 0, 0);
+      };
+      attach(1, p.attributes.TEXCOORD_0, 2, false);
+      attach(2, p.attributes.JOINTS_0, 4, false);
+      attach(3, p.attributes.WEIGHTS_0, 4, true);
+      let count2 = count, indexType = 0;
+      if (p.indices !== undefined) {
+        const idx = accData(json, bin, p.indices);
+        const ibuf = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibuf);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+        count2 = json.accessors[p.indices].count;
+        indexType = json.accessors[p.indices].componentType;
+      }
+      gl.bindVertexArray(null);
+      // morph targets de posición (solo deltas no nulos, aplicados en CPU)
+      const morphs = (p.targets || []).map(t => {
+        if (t.POSITION === undefined) return { idx: new Uint32Array(0), d: new Float32Array(0) };
+        const d = accData(json, bin, t.POSITION);
+        const idx = [];
+        for (let v = 0; v < count; v++) {
+          if (d[v*3] || d[v*3+1] || d[v*3+2]) idx.push(v);
+        }
+        const sd = new Float32Array(idx.length * 3);
+        idx.forEach((v, k) => { sd[k*3] = d[v*3]; sd[k*3+1] = d[v*3+1]; sd[k*3+2] = d[v*3+2]; });
+        return { idx: new Uint32Array(idx), d: sd };
+      });
+      const prim = {
+        vao, count: count2, indexType, posBuf,
+        base: morphs.length ? pos : null, work: morphs.length ? new Float32Array(pos) : null,
+        morphs, weights: new Float32Array(morphs.length), dirty: false,
+        mat: materials[p.material ?? 0], node: ni, skin: node.skin
+      };
+      prims.push(prim);
+      list.push(prim);
+    }
+    (primsByMeshNode.mesh[node.mesh] ??= []).push(...list);
+    (primsByMeshNode.node[ni] ??= []).push(...list);
+  });
+
+  const expr = expressionBinds(json, primsByMeshNode);
+  vrm.model = { json, nodes, roots: [...roots], skins, prims, textures, bones, version, expr };
+  vrm.flip = version === 0; // VRM 0.x mira a -Z: girarlo para encarar la cámara
+  await Promise.all(texJobs);
+
+  // Altura de referencia para encuadre y escala de animaciones
+  vrmUpdatePose(0);
+  const head = nodes[bones.head];
+  vrm.model.headY = head ? head.world[13] : 1.4;
+  vrm.model.hipsY = bones.hips !== undefined ? nodes[bones.hips].world[13] : 0.9;
+}
+
+function vrmDestroy() {
+  const gl = vrm.gl, m = vrm.model;
+  if (!m) return;
+  for (const p of m.prims) { gl.deleteVertexArray(p.vao); gl.deleteBuffer(p.posBuf); }
+  for (const s of m.skins) gl.deleteTexture(s.tex);
+  for (const t of m.textures) { if (t !== vrm.whiteTex) gl.deleteTexture(t); }
+  vrm.model = null;
+  vrm.anim = null;
+}
+
+// Rotaciones de la pose: brazos abajo + balanceo/respiración + animación VRMA
+function vrmPoseRotations(t) {
+  const rot = {};
+  const anim = vrm.anim;
+  if (anim) {
+    const at = ((performance.now() - anim.start) / 1000) % anim.duration;
+    for (const ch of anim.channels) {
+      if (ch.path === 'rotation') rot[ch.bone] = sampleQuat(ch, at);
+    }
+  } else {
+    rot.leftUpperArm = qaxis([0, 0, 1], -1.15);
+    rot.rightUpperArm = qaxis([0, 0, 1], 1.15);
+    const sway = Math.sin(t * 0.6) * 0.045;
+    const breathe = Math.sin(t * 1.7) * 0.02;
+    rot.spine = qmul(qaxis([0, 0, 1], sway * 0.4), qaxis([1, 0, 0], breathe));
+    rot.head = qmul(qaxis([0, 0, 1], -sway * 0.6), qaxis([0, 1, 0], Math.sin(t * 0.35) * 0.07));
+  }
+  return rot;
+}
+
+function vrmUpdatePose(t) {
+  const m = vrm.model;
+  const rot = vrmPoseRotations(t);
+  const boneOf = {}; // nodo → nombre de hueso
+  for (const [b, n] of Object.entries(m.bones)) boneOf[n] = b;
+  const local = m4ident();
+  const walk = (i, parent) => {
+    const n = m.nodes[i];
+    const bone = boneOf[i];
+    let q = n.r, tr = n.t;
+    if (bone && rot[bone]) q = qmul(n.r, rot[bone]);
+    if (bone === 'hips' && vrm.anim?.hips) {
+      const h = sampleVec3(vrm.anim.hips, ((performance.now() - vrm.anim.start) / 1000) % vrm.anim.duration);
+      tr = [n.t[0] + (h[0] - vrm.anim.hipsRest[0]) * vrm.anim.hipsScale,
+            n.t[1] + (h[1] - vrm.anim.hipsRest[1]) * vrm.anim.hipsScale,
+            n.t[2] + (h[2] - vrm.anim.hipsRest[2]) * vrm.anim.hipsScale];
+    }
+    m4fromTRS(tr, q, n.s, local);
+    m4mul(parent, local, n.world);
+    for (const c of n.children) walk(c, n.world);
+  };
+  const root = vrm.flip ? m4fromTRS([0, 0, 0], qaxis([0, 1, 0], Math.PI), [1, 1, 1]) : m4ident();
+  for (const r of m.roots) walk(r, root);
+  // articulaciones → textura
+  const gl = vrm.gl;
+  const tmp = new Float32Array(16);
+  for (const s of m.skins) {
+    s.joints.forEach((j, k) => {
+      if (s.ibm) {
+        m4mul(m.nodes[j].world, s.ibm.subarray(k * 16, k * 16 + 16), tmp);
+        s.data.set(tmp, k * 16);
+      } else {
+        s.data.set(m.nodes[j].world, k * 16);
+      }
+    });
+    gl.bindTexture(gl.TEXTURE_2D, s.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, s.joints.length * 4, 1, 0, gl.RGBA, gl.FLOAT, s.data);
+  }
+}
+
+// Expresiones: fija el peso de un preset y aplica los morphs en CPU
+function vrmExpression(name, w) {
+  const m = vrm.model;
+  for (const b of m.expr[name] || []) {
+    const nw = w * b.w;
+    if (Math.abs(b.prim.weights[b.morph] - nw) > 0.003) {
+      b.prim.weights[b.morph] = nw;
+      b.prim.dirty = true;
+    }
+  }
+}
+
+function vrmApplyMorphs() {
+  const gl = vrm.gl;
+  for (const p of vrm.model.prims) {
+    if (!p.dirty) continue;
+    p.dirty = false;
+    p.work.set(p.base);
+    p.morphs.forEach((mo, k) => {
+      const w = p.weights[k];
+      if (!w) return;
+      for (let e = 0; e < mo.idx.length; e++) {
+        const v = mo.idx[e] * 3;
+        p.work[v] += mo.d[e*3] * w; p.work[v+1] += mo.d[e*3+1] * w; p.work[v+2] += mo.d[e*3+2] * w;
+      }
+    });
+    gl.bindBuffer(gl.ARRAY_BUFFER, p.posBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, p.work);
+  }
+}
+
+function vrmRender() {
+  const gl = vrm.gl, m = vrm.model;
+  gl.viewport(0, 0, vrm.canvas.width, vrm.canvas.height);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(vrm.prog);
+  const size = Number($('vt-size').value); // reutiliza el deslizador de tamaño
+  const headY = m.headY;
+  const dist = headY * (2.6 - size * 2);
+  const eye = [0, headY * 0.92, dist];
+  const vp = m4mul(m4perspective(0.5, vrm.canvas.width / vrm.canvas.height, 0.05, 50), m4lookAt(eye, [0, headY * 0.86, 0]));
+  gl.uniformMatrix4fv(vrm.u.u_vp, false, vp);
+  gl.uniform1i(vrm.u.u_tex, 0);
+  gl.uniform1i(vrm.u.u_joints, 1);
+  const draw = blendPass => {
+    for (const p of m.prims) {
+      if (p.mat.blend !== blendPass) continue;
+      gl.bindVertexArray(p.vao);
+      gl.uniform1f(vrm.u.u_skinned, p.skin !== undefined ? 1 : 0);
+      gl.uniformMatrix4fv(vrm.u.u_model, false, m.nodes[p.node].world);
+      gl.uniform4fv(vrm.u.u_color, p.mat.color);
+      gl.uniform1f(vrm.u.u_cutoff, p.mat.cutoff);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, p.mat.tex !== undefined ? m.textures[p.mat.tex] : vrm.whiteTex);
+      if (p.skin !== undefined) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, m.skins[p.skin].tex);
+      }
+      if (p.mat.doubleSided) gl.disable(gl.CULL_FACE); else { gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); }
+      if (p.indexType) gl.drawElements(gl.TRIANGLES, p.count, p.indexType, 0);
+      else gl.drawArrays(gl.TRIANGLES, 0, p.count);
+    }
+  };
+  gl.disable(gl.BLEND);
+  gl.depthMask(true);
+  draw(false);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  draw(true);
+  gl.depthMask(true);
+  gl.bindVertexArray(null);
+}
+
+// Dibuja el avatar VRM sobre la vista del modo VTuber; true si se encargó él
+function vrmDraw(ctx, view, t) {
+  if (!vrm.model) return false;
+  // parpadeo automático
+  if (t > vrm.blink.next) {
+    vrm.blink.w = 1;
+    vrm.blink.next = t + 2 + Math.random() * 4;
+  }
+  vrm.blink.w = Math.max(0, vrm.blink.w - 0.12);
+  // boca según el nivel del micrófono (continuo, no binario)
+  const thr = 0.09 - Number($('vt-sens').value) * 0.085;
+  const target = Math.min(1, Math.max(0, (app.vt.smooth - thr * 0.5) * 9));
+  vrm.aa = vrm.aa * 0.6 + target * 0.4;
+  vrmExpression('aa', vrm.aa);
+  vrmExpression('blink', Math.min(1, vrm.blink.w * 1.6));
+  vrmApplyMorphs();
+  vrmUpdatePose(t);
+  vrmRender();
+  ctx.drawImage(vrm.canvas, 0, 0, view.width, view.height);
+  return true;
+}
+
+// ---------- Animaciones .vrma (experimental) ----------
+
+function sampleKeys(ch, t) {
+  const times = ch.times;
+  let i = 0;
+  while (i < times.length - 1 && times[i + 1] < t) i++;
+  const t0 = times[i], t1 = times[Math.min(i + 1, times.length - 1)];
+  const f = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+  return [i, Math.min(i + 1, times.length - 1), Math.max(0, Math.min(1, f))];
+}
+
+function sampleQuat(ch, t) {
+  const [a, b, f] = sampleKeys(ch, t);
+  return qnlerp(ch.values.subarray(a * 4, a * 4 + 4), ch.values.subarray(b * 4, b * 4 + 4), f);
+}
+
+function sampleVec3(ch, t) {
+  const [a, b, f] = sampleKeys(ch, t);
+  const va = ch.values.subarray(a * 3, a * 3 + 3), vb = ch.values.subarray(b * 3, b * 3 + 3);
+  return [va[0] + (vb[0]-va[0])*f, va[1] + (vb[1]-va[1])*f, va[2] + (vb[2]-va[2])*f];
+}
+
+function vrmaLoad(buf) {
+  if (!vrm.model) throw new Error('Carga primero un avatar .vrm');
+  const { json, bin } = parseGlb(buf);
+  const ext = json.extensions?.VRMC_vrm_animation;
+  if (!ext?.humanoid?.humanBones) throw new Error('El archivo no es un .vrma (falta VRMC_vrm_animation)');
+  const boneOfNode = {};
+  for (const [bone, def] of Object.entries(ext.humanoid.humanBones)) boneOfNode[def.node] = bone;
+  const anim = json.animations?.[0];
+  if (!anim) throw new Error('El .vrma no contiene animaciones');
+  const channels = [];
+  let duration = 0.01;
+  let hips = null;
+  for (const ch of anim.channels) {
+    const bone = boneOfNode[ch.target.node];
+    if (!bone) continue;
+    const s = anim.samplers[ch.sampler];
+    const times = accData(json, bin, s.input);
+    const values = accData(json, bin, s.output);
+    duration = Math.max(duration, times[times.length - 1]);
+    if (ch.target.path === 'rotation') channels.push({ bone, path: 'rotation', times, values });
+    else if (ch.target.path === 'translation' && bone === 'hips') hips = { times, values };
+  }
+  if (!channels.length) throw new Error('El .vrma no anima huesos humanoides');
+  const restHipsY = json.nodes?.[ext.humanoid.humanBones.hips?.node]?.translation?.[1] || vrm.model.hipsY;
+  vrm.anim = {
+    channels, duration, start: performance.now(), hips,
+    hipsRest: hips ? sampleVec3(hips, 0) : [0, 0, 0],
+    hipsScale: vrm.model.hipsY / restHipsY
+  };
+}
+
+// ---------- Eventos ----------
+
+function pickBinary(inputId, onReady) {
+  const input = $(inputId);
+  input.onchange = async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      await onReady(await file.arrayBuffer(), file.name);
+    } catch (err) {
+      setStatus('⚠ ' + err.message);
+    }
+  };
+  input.click();
+}
+
+$('btn-vrm').onclick = () => pickBinary('vrm-file', async (buf, name) => {
+  setStatus('⏳ cargando avatar…');
+  await vrmLoad(buf);
+  $('vrm-name').textContent = name;
+  $('btn-vrm-clear').classList.remove('hidden');
+  $('btn-vrm-flip').classList.remove('hidden');
+  $('vrma-section').classList.remove('hidden');
+  setStatus('');
+});
+$('btn-vrm-clear').onclick = () => {
+  vrmDestroy();
+  $('vrm-name').textContent = '';
+  $('vrma-name').textContent = '';
+  for (const id of ['btn-vrm-clear', 'btn-vrm-flip', 'vrma-section', 'btn-vrma-stop']) $(id).classList.add('hidden');
+};
+$('btn-vrm-flip').onclick = () => { vrm.flip = !vrm.flip; };
+$('btn-vrma').onclick = () => pickBinary('vrma-file', async (buf, name) => {
+  vrmaLoad(buf);
+  $('vrma-name').textContent = name;
+  $('btn-vrma-stop').classList.remove('hidden');
+});
+$('btn-vrma-stop').onclick = () => {
+  vrm.anim = null;
+  $('vrma-name').textContent = '';
+  $('btn-vrma-stop').classList.add('hidden');
+};
+</script>
+
+<script>
+'use strict';
+/* ---------- ⚡ Lucy Realtime (nube de Decart, opt-in) ----------
+   Vídeo-a-vídeo real a 30 fps con Lucy 2.5 sobre WebRTC, usando el SDK
+   oficial de Decart vendorizado en decart-sdk.js (se carga SOLO al pulsar
+   Conectar). Es el único modo no-local de la app: el vídeo de la cámara se
+   envía a la nube de Decart con la API key del usuario, y el stream
+   transformado vuelve y se pinta en la vista (con lo que 📸/⏺/OBS siguen
+   funcionando igual). El prompt/presets y la imagen de referencia (skin)
+   se sincronizan en caliente con setPrompt/setImage. */
+
+const lucy = { client: null, stream: null, video: null };
+
+function lucySetState(text) {
+  $('lucy-state').textContent = text;
+}
+
+function lucyLoadSdk() {
+  if (window.DecartSDK) return Promise.resolve();
+  return new Promise((ok, ko) => {
+    const s = document.createElement('script');
+    s.src = 'decart-sdk.js';
+    s.onload = () => window.DecartSDK ? ok() : ko(new Error('decart-sdk.js no expone DecartSDK'));
+    s.onerror = () => ko(new Error('No se encontró decart-sdk.js junto a la página (necesario para Lucy)'));
+    document.head.appendChild(s);
+  });
+}
+
+async function lucyConnect() {
+  const key = $('lucy-key').value.trim();
+  if (!key) { setStatus('⚠ Introduce tu API key de Decart (platform.decart.ai)'); return; }
+  localStorage.setItem('dedlit.webcam.decartkey', key);
+  $('btn-lucy').disabled = true;
+  try {
+    lucySetState('⏳ cargando SDK…');
+    await lucyLoadSdk();
+    const model = DecartSDK.models.realtime('lucy-2.5');
+    lucySetState('⏳ abriendo cámara…');
+    lucy.stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        deviceId: $('device').value ? { exact: $('device').value } : undefined,
+        width: { ideal: model.width }, height: { ideal: model.height }, frameRate: model.fps
+      },
+      audio: false
+    });
+    lucySetState('⏳ conectando con Decart…');
+    const client = DecartSDK.createDecartClient({ apiKey: key });
+    lucy.video = document.createElement('video');
+    lucy.video.autoplay = true; lucy.video.muted = true; lucy.video.playsInline = true;
+    const prompt = $('prompt').value.trim();
+    lucy.client = await client.realtime.connect(lucy.stream, {
+      model,
+      onRemoteStream: stream => {
+        lucy.video.srcObject = stream;
+        lucy.video.play().catch(() => {});
+      },
+      onConnectionChange: state => {
+        if (!lucy.client) return;
+        if (state === 'disconnected' || state === 'failed') {
+          setStatus('⚠ Lucy: conexión perdida');
+          lucyDisconnect();
+        }
+      },
+      initialState: prompt ? { prompt: { text: prompt, enhance: true } } : undefined,
+      mirror: $('mirror').checked
+    });
+    lucy.client.on('error', e => { setStatus('⚠ Lucy: ' + (e.message || e)); lucyDisconnect(); });
+    if (app.ref.dataUrl) lucy.client.setImage(app.ref.dataUrl).catch(() => {});
+    if (app.ai.on) setAi(false); // exclusivo con el img2img local
+    $('btn-lucy').textContent = '⏹ Desconectar';
+    lucySetState('🟢 conectado · 30 fps');
+    setStatus('⚡ Lucy Realtime en vivo — tu vídeo se está enviando a la nube de Decart');
+  } catch (err) {
+    lucyDisconnect(true);
+    setStatus('⚠ Lucy: ' + (err.message || err));
+  }
+  $('btn-lucy').disabled = false;
+}
+
+function lucyDisconnect(silent) {
+  try { lucy.client && lucy.client.disconnect(); } catch { /* ya caída */ }
+  if (lucy.stream) for (const t of lucy.stream.getTracks()) t.stop();
+  lucy.client = null;
+  lucy.stream = null;
+  lucy.video = null;
+  $('btn-lucy').textContent = '⚡ Conectar';
+  lucySetState('');
+  if (!silent) setStatus('');
+}
+
+// La vista pinta el stream transformado mientras Lucy está conectada
+function lucyDrawView(ctx, view) {
+  if (!lucy.client) return false;
+  if (lucy.video && lucy.video.videoWidth) {
+    if (view.width !== lucy.video.videoWidth) {
+      view.width = lucy.video.videoWidth;
+      view.height = lucy.video.videoHeight;
+    }
+    ctx.drawImage(lucy.video, 0, 0, view.width, view.height);
+  }
+  return true;
+}
+
+// Sincronización en caliente de prompt y referencia
+let lucyPromptTimer;
+function lucyPromptChanged() {
+  if (!lucy.client) return;
+  clearTimeout(lucyPromptTimer);
+  lucyPromptTimer = setTimeout(() => {
+    const p = $('prompt').value.trim();
+    if (p && lucy.client) lucy.client.setPrompt(p, { enhance: true }).catch(() => {});
+  }, 600);
+}
+
+function lucyRefChanged() {
+  if (!lucy.client) return;
+  lucy.client.setImage(app.ref.dataUrl || null).catch(() => {});
+}
+
+$('lucy-key').value = localStorage.getItem('dedlit.webcam.decartkey') || '';
+$('btn-lucy').onclick = () => { lucy.client ? lucyDisconnect() : lucyConnect(); };
+$('prompt').addEventListener('input', lucyPromptChanged);
+</script>
+</body>
+</html>

@@ -19,6 +19,7 @@ const rag = require('./lib/rag');
 const updater = require('./lib/updater');
 const selfsigned = require('./lib/selfsigned');
 const sdmanager = require('./lib/sdmanager');
+const comfymanager = require('./lib/comfymanager');
 
 const PORT = Number(process.env.DEDLIT_PORT || 8642);
 const PUBLIC = path.join(__dirname, 'public');
@@ -174,6 +175,8 @@ async function handleApi(req, res, url) {
       sdWebuiPath: cfg.sdWebuiPath || '',
       sdWebuiPathDefault: sdmanager.sdDir({ sdWebuiPath: '' }),
       comfyUrl: cfg.comfyUrl || 'http://127.0.0.1:8188',
+      comfyPath: cfg.comfyPath || '',
+      comfyPathDefault: comfymanager.comfyDir({ comfyPath: '' }),
       sttUrl: cfg.sttUrl || '',
       ttsUrl: cfg.ttsUrl || '',
       customInstructions: cfg.customInstructions || '',
@@ -221,6 +224,7 @@ async function handleApi(req, res, url) {
     if (typeof body.sdWebuiUrl === 'string') cfg.sdWebuiUrl = body.sdWebuiUrl.trim() || 'http://127.0.0.1:7860';
     if (typeof body.sdWebuiPath === 'string') cfg.sdWebuiPath = body.sdWebuiPath.trim();
     if (typeof body.comfyUrl === 'string') cfg.comfyUrl = body.comfyUrl.trim() || 'http://127.0.0.1:8188';
+    if (typeof body.comfyPath === 'string') cfg.comfyPath = body.comfyPath.trim();
     if (typeof body.sttUrl === 'string') cfg.sttUrl = body.sttUrl.trim();
     if (typeof body.ttsUrl === 'string') cfg.ttsUrl = body.ttsUrl.trim();
     if (typeof body.customInstructions === 'string') cfg.customInstructions = body.customInstructions;
@@ -469,6 +473,7 @@ async function handleApi(req, res, url) {
       providers.comfyCheck(cfg)
     ]);
     sd.installed = sdmanager.installState(cfg).installed; // instalado (aunque no esté corriendo)
+    comfy.installed = comfymanager.installState(cfg).installed;
     return json(res, 200, { ollama, lmstudio, sd, comfy });
   }
 
@@ -523,6 +528,26 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/sd/launch' && req.method === 'POST') {
     try {
       const r = sdmanager.launch(cfg);
+      return json(res, 200, { ok: true, dir: r.dir });
+    } catch (err) {
+      return json(res, 400, { error: err.message });
+    }
+  }
+  // Instalar ComfyUI (git clone; SSE con la salida) — mismo patrón que SD
+  if (url.pathname === '/api/comfy/install' && req.method === 'POST') {
+    sseStart(res);
+    try {
+      const r = await comfymanager.install(cfg, line => sse(res, { type: 'log', line }));
+      sse(res, { type: 'done', dir: r.dir, note: 'Descargado. Pulsa «Lanzar» para el primer arranque (creará el entorno de Python e instalará torch; tarda).' });
+    } catch (err) {
+      sse(res, { type: 'error', message: err.message });
+    }
+    return res.end();
+  }
+  // Lanzar ComfyUI
+  if (url.pathname === '/api/comfy/launch' && req.method === 'POST') {
+    try {
+      const r = await comfymanager.launch(cfg);
       return json(res, 200, { ok: true, dir: r.dir });
     } catch (err) {
       return json(res, 400, { error: err.message });
@@ -588,6 +613,53 @@ async function handleApi(req, res, url) {
       }
       return json(res, 200, { text });
     } catch (err) {
+      return json(res, 502, { error: err.message });
+    }
+  }
+
+  // ----- 🎥 Cámara IA: restilizado de fotogramas en vivo (img2img local) -----
+  if (url.pathname === '/api/cam/status' && req.method === 'GET') {
+    return json(res, 200, await camBackend(cfg, true));
+  }
+  if (url.pathname === '/api/cam/restyle' && req.method === 'POST') {
+    const body = await readBody(req);
+    const image = dataUrlB64(body.image);
+    if (!image) return json(res, 400, { error: 'Falta image (data-URL base64)' });
+    const backend = await camBackend(cfg);
+    if (!backend.backend) {
+      return json(res, 502, { error: 'Sin backend de imágenes: arranca Stable Diffusion (Automatic1111 con --api) o ComfyUI.' });
+    }
+    const clamp = (v, min, max, def) => Math.min(max, Math.max(min, Number(v) || def));
+    const snap8 = v => Math.round(v / 8) * 8;
+    const opts = {
+      image,
+      prompt: String(body.prompt || '').slice(0, 2000),
+      negative: String(body.negative || '').slice(0, 1000) || undefined,
+      denoise: clamp(body.denoise, 0.1, 0.95, 0.5),
+      steps: Math.round(clamp(body.steps, 4, 40, 12)),
+      width: snap8(clamp(body.width, 64, 1024, 512)),
+      height: snap8(clamp(body.height, 64, 1024, 512)),
+      cfg
+    };
+    try {
+      let buf;
+      if (backend.backend === 'sd') {
+        // Imagen de referencia ("skin"): vía IP-Adapter si la extensión
+        // ControlNet está instalada; si no, el cliente ya la fundió en el fotograma
+        const ref = dataUrlB64(body.refImage);
+        if (ref && backend.ipAdapter) {
+          opts.alwayson = { controlnet: { args: [{
+            enabled: true, module: backend.ipAdapter.module, model: backend.ipAdapter.model,
+            image: ref, weight: clamp(body.refWeight, 0, 1, 0.7), resize_mode: 1, pixel_perfect: true
+          }] } };
+        }
+        buf = await providers.sdImg2Img(opts);
+      } else {
+        buf = await providers.comfyImg2Img(opts);
+      }
+      return json(res, 200, { image: 'data:image/png;base64,' + buf.toString('base64'), backend: backend.backend });
+    } catch (err) {
+      camCache = null; // el backend pudo caerse a mitad: redetectar en la próxima
       return json(res, 502, { error: err.message });
     }
   }
@@ -693,6 +765,33 @@ async function generateImageBuffer(backend, prompt, cfg) {
   }
   const buf = await providers.generateImage({ providerId: backend.provider, model: backend.model, prompt, cfg });
   return { buf, label: backend.provider + ':' + backend.model };
+}
+
+// ---------- 🎥 Cámara IA ----------
+
+// Extrae el base64 de un data-URL de imagen (o de base64 pelado); null si no vale
+function dataUrlB64(v) {
+  const s = String(v || '');
+  const m = s.match(/^data:image\/\w+;base64,([A-Za-z0-9+/=]+)$/);
+  if (m) return m[1];
+  return /^[A-Za-z0-9+/=]{100,}$/.test(s) ? s : null;
+}
+
+// Backend de restilizado (SD WebUI → ComfyUI) con caché de 10 s: los fotogramas
+// llegan en bucle y no tiene sentido sondear el backend en cada uno
+let camCache = null;
+async function camBackend(cfg, force) {
+  if (!force && camCache && Date.now() - camCache.at < 10000) return camCache.value;
+  let value = { backend: null, ipAdapter: null };
+  const sd = await providers.sdCheck(cfg);
+  if (sd.online) {
+    value = { backend: 'sd', model: sd.models[0] || '', ipAdapter: await providers.sdIpAdapter(cfg) };
+  } else {
+    const comfy = await providers.comfyCheck(cfg);
+    if (comfy.online && comfy.models.length) value = { backend: 'comfy', model: comfy.models[0], ipAdapter: null };
+  }
+  camCache = { at: Date.now(), value };
+  return value;
 }
 
 // Herramienta search_docs del agente: busca en todas las colecciones RAG
@@ -1049,6 +1148,47 @@ async function handleGateway(req, res, url) {
   json(res, 404, { error: { message: 'Ruta no encontrada' } });
 }
 
+// ---------- DEDLIT Webcam (app autónoma servida desde el Studio) ----------
+
+const WEBCAM_HTML = path.join(__dirname, 'standalone', 'dedlit-webcam.html');
+const DECART_SDK = path.join(__dirname, 'standalone', 'decart-sdk.js');
+
+function serveFile(res, file, mime) {
+  if (!fs.existsSync(file)) { res.writeHead(404); return res.end('404'); }
+  res.writeHead(200, { 'Content-Type': mime });
+  fs.createReadStream(file).pipe(res);
+}
+
+// Proxy /sdproxy/<ruta> → <x-sd-url><ruta> para que DEDLIT Webcam hable con
+// Stable Diffusion sin flags CORS (mismo mecanismo que webcam-launcher.js)
+function sdProxy(req, res, targetPath) {
+  let base;
+  try {
+    base = new URL(req.headers['x-sd-url'] || 'http://127.0.0.1:7860');
+    if (base.protocol !== 'http:' && base.protocol !== 'https:') throw new Error('protocolo');
+  } catch {
+    return json(res, 400, { error: 'Cabecera x-sd-url no válida (debe ser una URL http/https)' });
+  }
+  const mod = base.protocol === 'https:' ? https : http;
+  const upstream = mod.request({
+    hostname: base.hostname,
+    port: base.port || (base.protocol === 'https:' ? 443 : 80),
+    path: base.pathname.replace(/\/+$/, '') + targetPath,
+    method: req.method,
+    headers: { 'Content-Type': req.headers['content-type'] || 'application/json' },
+    timeout: 300000
+  }, up => {
+    res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/json' });
+    up.pipe(res);
+  });
+  upstream.on('timeout', () => upstream.destroy(new Error('timeout')));
+  upstream.on('error', err => {
+    if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Stable Diffusion no responde en ' + base.href + ' (' + err.message + ')' }));
+  });
+  req.pipe(upstream);
+}
+
 // ---------- Estáticos ----------
 
 function serveStatic(res, url) {
@@ -1094,13 +1234,20 @@ const server = http.createServer(async (req, res) => {
         return json(res, 401, { error: 'Contraseña incorrecta' });
       }
       if (!isAuthed(req, cfgAuth) &&
-          (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/media/'))) {
+          (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/media/') ||
+           url.pathname.startsWith('/sdproxy/') || url.pathname === '/webcam')) {
         return json(res, 401, { error: 'Autenticación requerida' });
       }
     }
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
     if (url.pathname.startsWith('/v1/')) return await handleGateway(req, res, url);
     if (url.pathname.startsWith('/media/')) return serveMedia(res, url);
+    // DEDLIT Webcam: la app autónoma servida desde el Studio (el proxy hace
+    // innecesario el flag CORS de A1111, igual que en webcam-launcher.js)
+    if (url.pathname === '/webcam') return serveFile(res, WEBCAM_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/decart-sdk.js') return serveFile(res, DECART_SDK, 'text/javascript; charset=utf-8');
+    if (url.pathname === '/sdproxy/ping') { res.writeHead(204); return res.end(); }
+    if (url.pathname.startsWith('/sdproxy/')) return sdProxy(req, res, url.pathname.slice('/sdproxy'.length) + url.search);
     serveStatic(res, url);
   } catch (err) {
     try { json(res, 500, { error: err.message }); } catch { /* ya respondido */ }
