@@ -6,9 +6,19 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publicar release con este tag (p. ej. v1.10.0). gh lo crea si no existe. Vacío = solo compilar."
+        required: false
+        default: ''
 
 permissions:
   contents: write
+
+# Tag efectivo de release: el del push de tag, o el indicado a mano en un
+# workflow_dispatch (útil cuando no se puede hacer push de tags)
+env:
+  RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.release_tag }}
 
 jobs:
   check:
@@ -55,7 +65,7 @@ jobs:
       # privados): son solo una comodidad para builds de main, no deben
       # tumbar el workflow si la cuota está llena
       - uses: actions/upload-artifact@v4
-        if: "!startsWith(github.ref, 'refs/tags/v')"
+        if: env.RELEASE_TAG == ''
         continue-on-error: true
         with:
           name: dedlit-studio-win-x64
@@ -66,13 +76,13 @@ jobs:
       # En las releases los binarios van directos a los assets de la release,
       # que no consumen cuota de artefactos
       - name: Publicar en release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASE_TAG != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$env:GITHUB_REF_NAME" --title "$env:GITHUB_REF_NAME" --generate-notes 2>$null; if (-not $?) { "release ya existe" }
-          gh release upload "$env:GITHUB_REF_NAME" dist/dedlit-studio-win-x64.exe dist/dedlit-webcam.exe --clobber
+          gh release create "$env:RELEASE_TAG" --target "$env:GITHUB_SHA" --title "$env:RELEASE_TAG" --generate-notes 2>$null; if (-not $?) { "release ya existe" }
+          gh release upload "$env:RELEASE_TAG" dist/dedlit-studio-win-x64.exe dist/dedlit-webcam.exe --clobber
 
   exe-linux:
     runs-on: ubuntu-latest
@@ -87,19 +97,19 @@ jobs:
       - run: npx pkg . --targets node22-linux-x64
       - run: mv dist/dedlit-studio dist/dedlit-studio-linux-x64
       - uses: actions/upload-artifact@v4
-        if: "!startsWith(github.ref, 'refs/tags/v')"
+        if: env.RELEASE_TAG == ''
         continue-on-error: true
         with:
           name: dedlit-studio-linux-x64
           path: dist/dedlit-studio-linux-x64
           retention-days: 1
       - name: Publicar en release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASE_TAG != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes 2>/dev/null || echo "release ya existe"
-          gh release upload "$GITHUB_REF_NAME" dist/dedlit-studio-linux-x64 --clobber
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$RELEASE_TAG" --generate-notes 2>/dev/null || echo "release ya existe"
+          gh release upload "$RELEASE_TAG" dist/dedlit-studio-linux-x64 --clobber
 
   exe-macos:
     # En macOS pkg firma (ad-hoc) los binarios automáticamente,
@@ -117,7 +127,7 @@ jobs:
           mv dist/dedlit-studio-x64 dist/dedlit-studio-macos-x64
           mv dist/dedlit-studio-arm64 dist/dedlit-studio-macos-arm64
       - uses: actions/upload-artifact@v4
-        if: "!startsWith(github.ref, 'refs/tags/v')"
+        if: env.RELEASE_TAG == ''
         continue-on-error: true
         with:
           name: dedlit-studio-macos
@@ -127,8 +137,8 @@ jobs:
           retention-days: 1
       - name: Crear DMG (Apple Silicon)
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          [ "$VERSION" = "$GITHUB_REF_NAME" ] && VERSION="0.0.0-dev"
+          VERSION="${RELEASE_TAG#v}"
+          [ -z "$VERSION" ] && VERSION="0.0.0-dev"
           APP="build/DEDLIT Studio.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
@@ -150,9 +160,9 @@ jobs:
           hdiutil create -volname "DEDLIT Studio" -srcfolder dmgroot -ov -format UDZO "dist/DEDLIT-Studio-arm64.dmg"
 
       - name: Publicar en release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASE_TAG != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes 2>/dev/null || echo "release ya existe"
-          gh release upload "$GITHUB_REF_NAME" dist/dedlit-studio-macos-x64 dist/dedlit-studio-macos-arm64 dist/DEDLIT-Studio-arm64.dmg --clobber
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$RELEASE_TAG" --generate-notes 2>/dev/null || echo "release ya existe"
+          gh release upload "$RELEASE_TAG" dist/dedlit-studio-macos-x64 dist/dedlit-studio-macos-arm64 dist/DEDLIT-Studio-arm64.dmg --clobber
