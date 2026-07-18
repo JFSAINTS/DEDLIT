@@ -54,6 +54,12 @@ test('/sdproxy/ping responde (marcador de detección del proxy)', async () => {
   assert.equal((await fetch(BASE + '/sdproxy/ping')).status, 204);
 });
 
+test('sirve el SDK vendorizado de Lucy Realtime', async () => {
+  const res = await fetch(BASE + '/decart-sdk.js');
+  assert.equal(res.status, 200);
+  assert.match(await res.text(), /DecartSDK/);
+});
+
 test('el proxy reenvía GET a la URL de x-sd-url', async () => {
   const r = await fetch(BASE + '/sdproxy/sdapi/v1/sd-models', { headers: { 'x-sd-url': sdUrl() } });
   assert.equal(r.status, 200);

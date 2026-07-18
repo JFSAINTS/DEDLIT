@@ -192,6 +192,8 @@ Botón **🎥 Cámara IA** en la barra lateral: abre tu webcam y aplica, en loca
 
 Los efectos en tiempo real, el creador de filtros y el modo VTuber funcionan **sin nada más**; solo el restilizado IA necesita Stable Diffusion. Todo (skins, filtros, URL de SD) persiste en `localStorage` y nada sale de tu equipo.
 
+**⚡ Lucy Realtime (nube, opcional)** — vídeo-a-vídeo real a **30 fps** con [Lucy 2.5 de Decart](https://platform.decart.ai/) sobre WebRTC, al estilo de lucy.decart.ai: pega tu API key de Decart, pulsa Conectar y el prompt/presets y la imagen de referencia (skin) se aplican en directo (`setPrompt`/`setImage` en caliente). Es **el único modo no-local** de la app y es de pago: mientras esté conectado tu vídeo se envía a la nube de Decart — la interfaz lo avisa claramente. Usa el [SDK oficial MIT de Decart](https://github.com/DecartAI/sdk) vendorizado en `standalone/decart-sdk.js` (única pieza de terceros del cliente; se carga solo al conectar, con instrucciones de regeneración en su cabecera).
+
 **App para Windows (`dedlit-webcam.exe`)** — la forma más cómoda: descarga `dedlit-webcam.exe` de las [releases](https://github.com/JFSAINTS/DEDLIT/releases) (o compílalo con `npm run build:webcam`), haz doble clic y se abre solo en tu navegador. El lanzador (`standalone/webcam-launcher.js`, cero dependencias) además hace de **proxy hacia la API de Stable Diffusion**, así que basta arrancar A1111 con `--api` a secas — sin flags CORS. Solo escucha en `127.0.0.1` (puerto `DEDLIT_WEBCAM_PORT`, por defecto 8645).
 
 ## Integración con VS Code

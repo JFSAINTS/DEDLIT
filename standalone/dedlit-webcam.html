@@ -199,6 +199,13 @@
       <label>Mis skins IA <button id="btn-skin-save" class="mini" title="Guardar el estilo actual (prompt + intensidad + efecto + referencia) como skin">💾 guardar</button></label>
       <div id="skins" class="chips"></div>
 
+      <label>⚡ Lucy Realtime — nube (Decart) <span id="lucy-state" class="hint" style="text-transform:none;letter-spacing:0"></span></label>
+      <input type="password" id="lucy-key" placeholder="API key de Decart (platform.decart.ai)" autocomplete="off">
+      <div class="ref-row">
+        <button id="btn-lucy">⚡ Conectar</button>
+      </div>
+      <p class="hint">Vídeo-a-vídeo real a <b>30 fps</b> con Lucy 2.5 usando tu cuenta de Decart (de pago): usa el prompt y los presets de arriba, y la imagen de referencia como skin. ⚠ Mientras esté conectado <b>tu vídeo se envía a la nube de Decart</b> — nada es local en este modo. El SDK (archivo <code>decart-sdk.js</code> junto a esta página) solo se carga al conectar.</p>
+
       <div class="actions">
         <button id="btn-shot" title="Descargar el fotograma actual como PNG">📸 Capturar</button>
         <button id="btn-rec" title="Grabar la vista en vídeo (webm)">⏺ Grabar</button>
@@ -591,6 +598,7 @@ function renderGl(video) {
 // ---------- Bucle de dibujo ----------
 
 function drawCamView(ctx, view) {
+  if (typeof lucyDrawView === 'function' && lucyDrawView(ctx, view)) return;
   const video = $('video');
   if (!video.videoWidth) return;
   renderGl(video);
@@ -803,6 +811,7 @@ function applyStyle(p) {
   if (p.denoise) { $('denoise').value = p.denoise; $('denoise-val').textContent = p.denoise; }
   if (p.steps) { $('steps').value = p.steps; $('steps-val').textContent = p.steps; }
   if (p.effect && CAM_EFFECTS[p.effect]) { app.effect = p.effect; $('effect').value = p.effect; }
+  if (typeof lucyPromptChanged === 'function') lucyPromptChanged();
   if (p.ref) {
     const img = new Image();
     img.src = p.ref;
@@ -1077,12 +1086,14 @@ $('btn-ref').onclick = () => pickImage('ref-file', (img, dataUrl) => {
   $('ref-preview').classList.remove('hidden');
   $('btn-ref-clear').classList.remove('hidden');
   updateRefHint();
+  if (typeof lucyRefChanged === 'function') lucyRefChanged();
 });
 $('btn-ref-clear').onclick = () => {
   app.ref = { dataUrl: null, img: null };
   $('ref-preview').classList.add('hidden');
   $('btn-ref-clear').classList.add('hidden');
   updateRefHint();
+  if (typeof lucyRefChanged === 'function') lucyRefChanged();
 };
 $('btn-skin-save').onclick = saveSkin;
 $('btn-shot').onclick = snapshot;
@@ -1823,6 +1834,130 @@ $('btn-vrma-stop').onclick = () => {
   $('vrma-name').textContent = '';
   $('btn-vrma-stop').classList.add('hidden');
 };
+</script>
+
+<script>
+'use strict';
+/* ---------- ⚡ Lucy Realtime (nube de Decart, opt-in) ----------
+   Vídeo-a-vídeo real a 30 fps con Lucy 2.5 sobre WebRTC, usando el SDK
+   oficial de Decart vendorizado en decart-sdk.js (se carga SOLO al pulsar
+   Conectar). Es el único modo no-local de la app: el vídeo de la cámara se
+   envía a la nube de Decart con la API key del usuario, y el stream
+   transformado vuelve y se pinta en la vista (con lo que 📸/⏺/OBS siguen
+   funcionando igual). El prompt/presets y la imagen de referencia (skin)
+   se sincronizan en caliente con setPrompt/setImage. */
+
+const lucy = { client: null, stream: null, video: null };
+
+function lucySetState(text) {
+  $('lucy-state').textContent = text;
+}
+
+function lucyLoadSdk() {
+  if (window.DecartSDK) return Promise.resolve();
+  return new Promise((ok, ko) => {
+    const s = document.createElement('script');
+    s.src = 'decart-sdk.js';
+    s.onload = () => window.DecartSDK ? ok() : ko(new Error('decart-sdk.js no expone DecartSDK'));
+    s.onerror = () => ko(new Error('No se encontró decart-sdk.js junto a la página (necesario para Lucy)'));
+    document.head.appendChild(s);
+  });
+}
+
+async function lucyConnect() {
+  const key = $('lucy-key').value.trim();
+  if (!key) { setStatus('⚠ Introduce tu API key de Decart (platform.decart.ai)'); return; }
+  localStorage.setItem('dedlit.webcam.decartkey', key);
+  $('btn-lucy').disabled = true;
+  try {
+    lucySetState('⏳ cargando SDK…');
+    await lucyLoadSdk();
+    const model = DecartSDK.models.realtime('lucy-2.5');
+    lucySetState('⏳ abriendo cámara…');
+    lucy.stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        deviceId: $('device').value ? { exact: $('device').value } : undefined,
+        width: { ideal: model.width }, height: { ideal: model.height }, frameRate: model.fps
+      },
+      audio: false
+    });
+    lucySetState('⏳ conectando con Decart…');
+    const client = DecartSDK.createDecartClient({ apiKey: key });
+    lucy.video = document.createElement('video');
+    lucy.video.autoplay = true; lucy.video.muted = true; lucy.video.playsInline = true;
+    const prompt = $('prompt').value.trim();
+    lucy.client = await client.realtime.connect(lucy.stream, {
+      model,
+      onRemoteStream: stream => {
+        lucy.video.srcObject = stream;
+        lucy.video.play().catch(() => {});
+      },
+      onConnectionChange: state => {
+        if (!lucy.client) return;
+        if (state === 'disconnected' || state === 'failed') {
+          setStatus('⚠ Lucy: conexión perdida');
+          lucyDisconnect();
+        }
+      },
+      initialState: prompt ? { prompt: { text: prompt, enhance: true } } : undefined,
+      mirror: $('mirror').checked
+    });
+    lucy.client.on('error', e => { setStatus('⚠ Lucy: ' + (e.message || e)); lucyDisconnect(); });
+    if (app.ref.dataUrl) lucy.client.setImage(app.ref.dataUrl).catch(() => {});
+    if (app.ai.on) setAi(false); // exclusivo con el img2img local
+    $('btn-lucy').textContent = '⏹ Desconectar';
+    lucySetState('🟢 conectado · 30 fps');
+    setStatus('⚡ Lucy Realtime en vivo — tu vídeo se está enviando a la nube de Decart');
+  } catch (err) {
+    lucyDisconnect(true);
+    setStatus('⚠ Lucy: ' + (err.message || err));
+  }
+  $('btn-lucy').disabled = false;
+}
+
+function lucyDisconnect(silent) {
+  try { lucy.client && lucy.client.disconnect(); } catch { /* ya caída */ }
+  if (lucy.stream) for (const t of lucy.stream.getTracks()) t.stop();
+  lucy.client = null;
+  lucy.stream = null;
+  lucy.video = null;
+  $('btn-lucy').textContent = '⚡ Conectar';
+  lucySetState('');
+  if (!silent) setStatus('');
+}
+
+// La vista pinta el stream transformado mientras Lucy está conectada
+function lucyDrawView(ctx, view) {
+  if (!lucy.client) return false;
+  if (lucy.video && lucy.video.videoWidth) {
+    if (view.width !== lucy.video.videoWidth) {
+      view.width = lucy.video.videoWidth;
+      view.height = lucy.video.videoHeight;
+    }
+    ctx.drawImage(lucy.video, 0, 0, view.width, view.height);
+  }
+  return true;
+}
+
+// Sincronización en caliente de prompt y referencia
+let lucyPromptTimer;
+function lucyPromptChanged() {
+  if (!lucy.client) return;
+  clearTimeout(lucyPromptTimer);
+  lucyPromptTimer = setTimeout(() => {
+    const p = $('prompt').value.trim();
+    if (p && lucy.client) lucy.client.setPrompt(p, { enhance: true }).catch(() => {});
+  }, 600);
+}
+
+function lucyRefChanged() {
+  if (!lucy.client) return;
+  lucy.client.setImage(app.ref.dataUrl || null).catch(() => {});
+}
+
+$('lucy-key').value = localStorage.getItem('dedlit.webcam.decartkey') || '';
+$('btn-lucy').onclick = () => { lucy.client ? lucyDisconnect() : lucyConnect(); };
+$('prompt').addEventListener('input', lucyPromptChanged);
 </script>
 </body>
 </html>

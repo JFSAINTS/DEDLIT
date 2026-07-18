@@ -12,8 +12,9 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const PORT = Number(process.env.DEDLIT_WEBCAM_PORT || 8645);
-// path.join(__dirname, …) literal: pkg lo detecta y empaqueta el HTML como asset
+// path.join(__dirname, …) literales: pkg los detecta y empaqueta como assets
 const HTML = path.join(__dirname, 'dedlit-webcam.html');
+const DECART_SDK = path.join(__dirname, 'decart-sdk.js'); // SDK vendorizado de Lucy Realtime
 
 // Proxy /sdproxy/<ruta> → <x-sd-url><ruta>. Solo destinos http(s); el binario
 // escucha únicamente en 127.0.0.1, igual que el resto de DEDLIT.
@@ -51,6 +52,11 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/' || url.pathname === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return fs.createReadStream(HTML).pipe(res);
+  }
+  if (url.pathname === '/decart-sdk.js') {
+    if (!fs.existsSync(DECART_SDK)) { res.writeHead(404); return res.end('404'); }
+    res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'max-age=86400' });
+    return fs.createReadStream(DECART_SDK).pipe(res);
   }
   if (url.pathname === '/sdproxy/ping') {
     res.writeHead(204);
