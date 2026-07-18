@@ -19,6 +19,7 @@ const rag = require('./lib/rag');
 const updater = require('./lib/updater');
 const selfsigned = require('./lib/selfsigned');
 const sdmanager = require('./lib/sdmanager');
+const comfymanager = require('./lib/comfymanager');
 
 const PORT = Number(process.env.DEDLIT_PORT || 8642);
 const PUBLIC = path.join(__dirname, 'public');
@@ -174,6 +175,8 @@ async function handleApi(req, res, url) {
       sdWebuiPath: cfg.sdWebuiPath || '',
       sdWebuiPathDefault: sdmanager.sdDir({ sdWebuiPath: '' }),
       comfyUrl: cfg.comfyUrl || 'http://127.0.0.1:8188',
+      comfyPath: cfg.comfyPath || '',
+      comfyPathDefault: comfymanager.comfyDir({ comfyPath: '' }),
       sttUrl: cfg.sttUrl || '',
       ttsUrl: cfg.ttsUrl || '',
       customInstructions: cfg.customInstructions || '',
@@ -221,6 +224,7 @@ async function handleApi(req, res, url) {
     if (typeof body.sdWebuiUrl === 'string') cfg.sdWebuiUrl = body.sdWebuiUrl.trim() || 'http://127.0.0.1:7860';
     if (typeof body.sdWebuiPath === 'string') cfg.sdWebuiPath = body.sdWebuiPath.trim();
     if (typeof body.comfyUrl === 'string') cfg.comfyUrl = body.comfyUrl.trim() || 'http://127.0.0.1:8188';
+    if (typeof body.comfyPath === 'string') cfg.comfyPath = body.comfyPath.trim();
     if (typeof body.sttUrl === 'string') cfg.sttUrl = body.sttUrl.trim();
     if (typeof body.ttsUrl === 'string') cfg.ttsUrl = body.ttsUrl.trim();
     if (typeof body.customInstructions === 'string') cfg.customInstructions = body.customInstructions;
@@ -469,6 +473,7 @@ async function handleApi(req, res, url) {
       providers.comfyCheck(cfg)
     ]);
     sd.installed = sdmanager.installState(cfg).installed; // instalado (aunque no esté corriendo)
+    comfy.installed = comfymanager.installState(cfg).installed;
     return json(res, 200, { ollama, lmstudio, sd, comfy });
   }
 
@@ -523,6 +528,26 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/sd/launch' && req.method === 'POST') {
     try {
       const r = sdmanager.launch(cfg);
+      return json(res, 200, { ok: true, dir: r.dir });
+    } catch (err) {
+      return json(res, 400, { error: err.message });
+    }
+  }
+  // Instalar ComfyUI (git clone; SSE con la salida) — mismo patrón que SD
+  if (url.pathname === '/api/comfy/install' && req.method === 'POST') {
+    sseStart(res);
+    try {
+      const r = await comfymanager.install(cfg, line => sse(res, { type: 'log', line }));
+      sse(res, { type: 'done', dir: r.dir, note: 'Descargado. Pulsa «Lanzar» para el primer arranque (creará el entorno de Python e instalará torch; tarda).' });
+    } catch (err) {
+      sse(res, { type: 'error', message: err.message });
+    }
+    return res.end();
+  }
+  // Lanzar ComfyUI
+  if (url.pathname === '/api/comfy/launch' && req.method === 'POST') {
+    try {
+      const r = await comfymanager.launch(cfg);
       return json(res, 200, { ok: true, dir: r.dir });
     } catch (err) {
       return json(res, 400, { error: err.message });
@@ -1123,6 +1148,47 @@ async function handleGateway(req, res, url) {
   json(res, 404, { error: { message: 'Ruta no encontrada' } });
 }
 
+// ---------- DEDLIT Webcam (app autónoma servida desde el Studio) ----------
+
+const WEBCAM_HTML = path.join(__dirname, 'standalone', 'dedlit-webcam.html');
+const DECART_SDK = path.join(__dirname, 'standalone', 'decart-sdk.js');
+
+function serveFile(res, file, mime) {
+  if (!fs.existsSync(file)) { res.writeHead(404); return res.end('404'); }
+  res.writeHead(200, { 'Content-Type': mime });
+  fs.createReadStream(file).pipe(res);
+}
+
+// Proxy /sdproxy/<ruta> → <x-sd-url><ruta> para que DEDLIT Webcam hable con
+// Stable Diffusion sin flags CORS (mismo mecanismo que webcam-launcher.js)
+function sdProxy(req, res, targetPath) {
+  let base;
+  try {
+    base = new URL(req.headers['x-sd-url'] || 'http://127.0.0.1:7860');
+    if (base.protocol !== 'http:' && base.protocol !== 'https:') throw new Error('protocolo');
+  } catch {
+    return json(res, 400, { error: 'Cabecera x-sd-url no válida (debe ser una URL http/https)' });
+  }
+  const mod = base.protocol === 'https:' ? https : http;
+  const upstream = mod.request({
+    hostname: base.hostname,
+    port: base.port || (base.protocol === 'https:' ? 443 : 80),
+    path: base.pathname.replace(/\/+$/, '') + targetPath,
+    method: req.method,
+    headers: { 'Content-Type': req.headers['content-type'] || 'application/json' },
+    timeout: 300000
+  }, up => {
+    res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/json' });
+    up.pipe(res);
+  });
+  upstream.on('timeout', () => upstream.destroy(new Error('timeout')));
+  upstream.on('error', err => {
+    if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Stable Diffusion no responde en ' + base.href + ' (' + err.message + ')' }));
+  });
+  req.pipe(upstream);
+}
+
 // ---------- Estáticos ----------
 
 function serveStatic(res, url) {
@@ -1168,13 +1234,20 @@ const server = http.createServer(async (req, res) => {
         return json(res, 401, { error: 'Contraseña incorrecta' });
       }
       if (!isAuthed(req, cfgAuth) &&
-          (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/media/'))) {
+          (url.pathname.startsWith('/api/') || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/media/') ||
+           url.pathname.startsWith('/sdproxy/') || url.pathname === '/webcam')) {
         return json(res, 401, { error: 'Autenticación requerida' });
       }
     }
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
     if (url.pathname.startsWith('/v1/')) return await handleGateway(req, res, url);
     if (url.pathname.startsWith('/media/')) return serveMedia(res, url);
+    // DEDLIT Webcam: la app autónoma servida desde el Studio (el proxy hace
+    // innecesario el flag CORS de A1111, igual que en webcam-launcher.js)
+    if (url.pathname === '/webcam') return serveFile(res, WEBCAM_HTML, 'text/html; charset=utf-8');
+    if (url.pathname === '/decart-sdk.js') return serveFile(res, DECART_SDK, 'text/javascript; charset=utf-8');
+    if (url.pathname === '/sdproxy/ping') { res.writeHead(204); return res.end(); }
+    if (url.pathname.startsWith('/sdproxy/')) return sdProxy(req, res, url.pathname.slice('/sdproxy'.length) + url.search);
     serveStatic(res, url);
   } catch (err) {
     try { json(res, 500, { error: err.message }); } catch { /* ya respondido */ }

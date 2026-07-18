@@ -157,6 +157,29 @@ test('POST /api/cam/restyle sin imagen devuelve 400', async () => {
   assert.equal(res.status, 400);
 });
 
+test('GET /api/status incluye el estado de instalación de SD y ComfyUI', async () => {
+  const s = await (await fetch(BASE + '/api/status')).json();
+  assert.equal(typeof s.sd.installed, 'boolean');
+  assert.equal(typeof s.comfy.installed, 'boolean');
+});
+
+test('sirve DEDLIT Webcam en /webcam con su proxy de SD', async () => {
+  const page = await fetch(BASE + '/webcam');
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /DEDLIT Webcam/);
+  assert.equal((await fetch(BASE + '/sdproxy/ping')).status, 204);
+  const sdk = await fetch(BASE + '/decart-sdk.js');
+  assert.equal(sdk.status, 200);
+});
+
+test('el proxy /sdproxy reenvía al destino de x-sd-url', async () => {
+  const r = await fetch(BASE + '/sdproxy/sdapi/v1/sd-models', {
+    headers: { 'x-sd-url': 'http://127.0.0.1:' + mock.address().port }
+  });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json())[0].model_name, 'mock-sd');
+});
+
 test('rechaza chat con parámetros faltantes', async () => {
   const res = await fetch(BASE + '/api/chat', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

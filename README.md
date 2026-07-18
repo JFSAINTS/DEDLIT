@@ -165,7 +165,7 @@ Según las capacidades del modelo cargado (se muestran como chips bajo el select
 
 - 🖼️ **Generar imagen**: si tienes **Stable Diffusion local** (Automatic1111/SD.Next/Forge arrancado con `--api`; URL en Ajustes) se usa automáticamente — gratis y 100% privado. Si no, `gpt-image-1`/`dall-e-3` (OpenAI), `grok-2-image` (xAI) o `cogview-4` (Zhipu) con key.
 
-  ¿No lo tienes instalado? En la barra lateral, junto a *Stable Diffusion*, aparece un botón **⬇ Instalar** (clona Automatic1111 en `~/.dedlit`; requiere `git` y Python 3.10+, y el primer arranque descarga varios GB) y, cuando ya está instalado pero apagado, **▶ Lanzar** (lo arranca con `--api` y espera a que esté listo). La carpeta de instalación es configurable en Ajustes.
+  ¿No lo tienes instalado? En la barra lateral, junto a *Stable Diffusion*, aparece un botón **⬇ Instalar** (clona Automatic1111 en `~/.dedlit`; requiere `git` y Python 3.10+, y el primer arranque descarga varios GB) y, cuando ya está instalado pero apagado, **▶ Lanzar** (lo arranca con `--api` y espera a que esté listo). La carpeta de instalación es configurable en Ajustes. **ComfyUI tiene sus propios botones Instalar/Lanzar** con el mismo flujo (DEDLIT genera su launcher `dedlit-comfy.bat`/`.sh`, que crea el entorno de Python e instala torch en el primer arranque — con wheels CUDA si detecta NVIDIA).
 - 🔊 **Generar voz (TTS)**: `tts-1`, `gpt-4o-mini-tts`… (campo de voz configurable: alloy, echo, nova…).
 - 📝 **Transcribir audio**: adjunta un audio y usa `whisper-1` / `gpt-4o-transcribe`.
 
@@ -183,7 +183,7 @@ Botón **🎥 Cámara IA** en la barra lateral: abre tu webcam y aplica, en loca
 
 ## 🎥 DEDLIT Webcam (aplicación autónoma)
 
-¿Solo quieres la cámara, sin el resto de DEDLIT? `standalone/dedlit-webcam.html` es una **aplicación completa en un único archivo HTML**: ábrela con doble clic (o sírvela estática) — sin servidor, sin dependencias, sin instalación. Tres pestañas:
+¿Solo quieres la cámara, sin el resto de DEDLIT? `standalone/dedlit-webcam.html` es una **aplicación completa en un único archivo HTML**: ábrela con doble clic (o sírvela estática) — sin servidor, sin dependencias, sin instalación. Desde DEDLIT Studio también la tienes a un clic con el botón **🎬 Webcam** de la barra lateral (se sirve en `/webcam`, con el proxy de SD incluido — sin flags CORS). Tres pestañas:
 
 - **🎥 Cámara** — los mismos efectos WebGL y el restilizado IA en vivo, hablando **directamente** con la API de Stable Diffusion. Arranca Automatic1111/SD.Next/Forge con `--api --cors-allow-origins=*` (el flag CORS es necesario al no compartir origen). IP-Adapter, presets y skins IA (ahora con la imagen de referencia guardada dentro del skin) incluidos.
 - **🎨 Creador de filtros** — construye filtros **en vivo y sin escribir código** con controles (pixelado, posterizar, bordes, tono, saturación, tinte, scanlines, ruido, desplazamiento RGB…) sobre un *übershader* paramétrico, y guárdalos con nombre. Modo experto opcional: escribe tu propio fragment shader GLSL con validación de compilación.
