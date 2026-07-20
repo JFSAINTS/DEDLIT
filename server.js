@@ -193,7 +193,8 @@ async function handleApi(req, res, url) {
       temperature: cfg.temperature,
       lastProvider: cfg.lastProvider,
       lastModel: cfg.lastModel,
-      gatewayUrl: `http://127.0.0.1:${PORT}/v1`
+      gatewayUrl: `http://127.0.0.1:${PORT}/v1`,
+      gatewayAnthropicUrl: `http://127.0.0.1:${PORT}`
     });
   }
 
@@ -1142,6 +1143,122 @@ async function handleGateway(req, res, url) {
     return json(res, 200, {
       id: 'chatcmpl-' + Date.now(), object: 'chat.completion', model: body.model,
       choices: [{ index: 0, message, finish_reason: calls ? 'tool_calls' : 'stop' }]
+    });
+  }
+
+  // ----- Dialecto Anthropic: /v1/messages (Messages API) -----
+  // El gateway habla también el protocolo de Anthropic, para clientes y
+  // herramientas que lo esperen (ANTHROPIC_BASE_URL apuntando aquí).
+  if (url.pathname === '/v1/messages' && req.method === 'POST') {
+    const body = await readBody(req);
+    const [providerId, ...rest] = String(body.model || '').split(':');
+    const model = rest.join(':');
+    if (!providers.REGISTRY[providerId] || !model) {
+      return json(res, 400, { type: 'error', error: { type: 'invalid_request_error', message: 'Usa model con formato "proveedor:modelo", p.ej. "groq:llama-3.3-70b-versatile"' } });
+    }
+
+    // Entrada Anthropic → formato interno (estilo OpenAI)
+    const msgs = [];
+    const sysText = typeof body.system === 'string'
+      ? body.system
+      : Array.isArray(body.system) ? body.system.filter(b => b.type === 'text').map(b => b.text).join('\n') : '';
+    if (sysText) msgs.push({ role: 'system', content: sysText });
+    for (const m of body.messages || []) {
+      if (typeof m.content === 'string') { msgs.push({ role: m.role, content: m.content }); continue; }
+      const blocks = Array.isArray(m.content) ? m.content : [];
+      if (m.role === 'assistant') {
+        const text = blocks.filter(b => b.type === 'text').map(b => b.text).join('');
+        const uses = blocks.filter(b => b.type === 'tool_use');
+        const out = { role: 'assistant', content: text || null };
+        if (uses.length) {
+          out.tool_calls = uses.map(u => ({ id: u.id, type: 'function', function: { name: u.name, arguments: JSON.stringify(u.input || {}) } }));
+        }
+        msgs.push(out);
+      } else {
+        // user: separar tool_results (→ role tool) del resto (texto/imagen)
+        for (const b of blocks) {
+          if (b.type === 'tool_result') {
+            const content = typeof b.content === 'string'
+              ? b.content
+              : Array.isArray(b.content) ? b.content.filter(x => x.type === 'text').map(x => x.text).join('\n') : '';
+            msgs.push({ role: 'tool', tool_call_id: b.tool_use_id, content });
+          }
+        }
+        const parts = [];
+        for (const b of blocks) {
+          if (b.type === 'text') parts.push({ type: 'text', text: b.text });
+          else if (b.type === 'image' && b.source?.type === 'base64') {
+            parts.push({ type: 'image_url', image_url: { url: 'data:' + b.source.media_type + ';base64,' + b.source.data } });
+          }
+        }
+        if (parts.length) msgs.push({ role: 'user', content: parts.length === 1 && parts[0].type === 'text' ? parts[0].text : parts });
+      }
+    }
+
+    // Herramientas Anthropic (input_schema) → neutro interno
+    const tools = Array.isArray(body.tools) && body.tools.length
+      ? body.tools.map(t => ({ name: t.name, description: t.description || '', parameters: t.input_schema || { type: 'object', properties: {} } }))
+      : null;
+
+    const stream = providers.chatStream({
+      providerId, model, messages: media.resolveMessages(msgs), tools,
+      temperature: body.temperature ?? cfg.temperature, cfg
+    });
+
+    const msgId = 'msg_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+    if (body.stream) {
+      // SSE con nombres de evento del protocolo de Anthropic
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
+      const emit = (event, data) => res.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n');
+      emit('message_start', { type: 'message_start', message: { id: msgId, type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, usage: { input_tokens: 0, output_tokens: 0 } } });
+      let blockIndex = -1;
+      let textOpen = false;
+      let stopReason = 'end_turn';
+      for await (const ev of stream) {
+        if (ev.type === 'text') {
+          if (!textOpen) {
+            blockIndex++;
+            textOpen = true;
+            emit('content_block_start', { type: 'content_block_start', index: blockIndex, content_block: { type: 'text', text: '' } });
+          }
+          emit('content_block_delta', { type: 'content_block_delta', index: blockIndex, delta: { type: 'text_delta', text: ev.text } });
+        } else if (ev.type === 'tool_calls') {
+          if (textOpen) { emit('content_block_stop', { type: 'content_block_stop', index: blockIndex }); textOpen = false; }
+          for (const c of ev.calls) {
+            blockIndex++;
+            emit('content_block_start', { type: 'content_block_start', index: blockIndex, content_block: { type: 'tool_use', id: c.id, name: c.name, input: {} } });
+            emit('content_block_delta', { type: 'content_block_delta', index: blockIndex, delta: { type: 'input_json_delta', partial_json: JSON.stringify(c.args || {}) } });
+            emit('content_block_stop', { type: 'content_block_stop', index: blockIndex });
+          }
+          stopReason = 'tool_use';
+        } else if (ev.type === 'error') {
+          emit('error', { type: 'error', error: { type: 'api_error', message: ev.message } });
+        }
+      }
+      if (textOpen) emit('content_block_stop', { type: 'content_block_stop', index: blockIndex });
+      emit('message_delta', { type: 'message_delta', delta: { stop_reason: stopReason, stop_sequence: null }, usage: { output_tokens: 0 } });
+      emit('message_stop', { type: 'message_stop' });
+      return res.end();
+    }
+
+    // sin streaming
+    let text = '';
+    let calls = null;
+    let error = null;
+    for await (const ev of stream) {
+      if (ev.type === 'text') text += ev.text;
+      else if (ev.type === 'tool_calls') calls = ev.calls;
+      else if (ev.type === 'error') error = ev.message;
+    }
+    if (error) return json(res, 502, { type: 'error', error: { type: 'api_error', message: error } });
+    const content = [];
+    if (text) content.push({ type: 'text', text });
+    for (const c of calls || []) content.push({ type: 'tool_use', id: c.id, name: c.name, input: c.args || {} });
+    return json(res, 200, {
+      id: msgId, type: 'message', role: 'assistant', model: body.model,
+      content, stop_reason: calls ? 'tool_use' : 'end_turn', stop_sequence: null,
+      usage: { input_tokens: 0, output_tokens: 0 }
     });
   }
 

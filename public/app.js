@@ -1206,6 +1206,7 @@ function openSettings() {
   renderMcpCatalog();
   refreshMcpStatus(false);
   $('cfg-gateway').textContent = c.gatewayUrl;
+  $('cfg-gateway-anthropic').textContent = c.gatewayAnthropicUrl || '';
 
   const cont = $('cfg-providers');
   cont.innerHTML = '';

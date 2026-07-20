@@ -218,6 +218,15 @@ Los efectos en tiempo real, el creador de filtros y el modo VTuber funcionan **s
        model: ollama:llama3.1
    ```
 
+### Doble dialecto: OpenAI y Anthropic
+
+El gateway habla los **dos protocolos** más extendidos, así que casi cualquier cliente o script encaja:
+
+- **OpenAI-compatible** en `http://127.0.0.1:8642/v1` (endpoint `/v1/chat/completions`, con function calling).
+- **Anthropic Messages API** en `http://127.0.0.1:8642` (endpoint `/v1/messages`): apunta ahí `ANTHROPIC_BASE_URL` en cualquier cliente o herramienta que espere el protocolo de Anthropic. Convierte `system`, bloques de contenido, `tool_use`/`tool_result` e imágenes, y responde en JSON o en SSE con los eventos `message_start` / `content_block_*` / `message_delta` / `message_stop`.
+
+En ambos casos el modelo va en formato `proveedor:modelo` (p. ej. `groq:llama-3.3-70b-versatile`), y todo pasa por tus keys cifradas, tu cadena de fallback y tu contador de coste. Es una **vía adicional** para dar a tus scripts y herramientas acceso a los 17 proveedores — no reemplaza a Claude Code ni a la API oficial de Anthropic.
+
 ## Docker (NAS / servidor casero 24/7)
 
 ```bash
